@@ -328,6 +328,31 @@
   flex-wrap: wrap;
 }
 
+.winner-toast {
+  position: fixed;
+  top: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  background: linear-gradient(135deg, rgba(242, 178, 76, 0.92), rgba(255, 125, 90, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #221308;
+  padding: 14px 18px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+}
+
+.winner-badge {
+  font-weight: 700;
+}
+
+.winner-detail {
+  font-size: 0.85rem;
+}
+
 .toast-mask {
   position: fixed;
   inset: 0;

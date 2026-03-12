@@ -15,6 +15,9 @@ export type RoomState = {
   currentPlayer: PlayerId
   pieces: PieceMap
   winner: PlayerId | null
+  startedAt: number | null
+  endedAt: number | null
+  moveCount: number
   updatedAt: number
 }
 
@@ -65,4 +68,5 @@ export interface ClientToServerEvents {
   'room:leave': (payload: RoomJoinPayload) => void
   'move:intent': (payload: MoveIntent) => void
   'emoji:send': (payload: { roomId: string; emoji: string }) => void
+  'room:restart': (payload: { roomId: string }) => void
 }

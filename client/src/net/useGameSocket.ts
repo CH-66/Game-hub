@@ -21,6 +21,7 @@ type UseGameSocket = {
   setReady: (roomId: string, ready: boolean) => void
   sendMove: (roomId: string, from: string, to: string) => void
   sendEmoji: (roomId: string, emoji: string) => void
+  restartRoom: (roomId: string) => void
   reconnect: () => void
 }
 
@@ -128,6 +129,10 @@ export const useGameSocket = (url: string): UseGameSocket => {
     socket.emit('emoji:send', { roomId, emoji })
   }
 
+  const restartRoom = (roomId: string) => {
+    socket.emit('room:restart', { roomId })
+  }
+
   return {
     roomState,
     seat,
@@ -141,6 +146,7 @@ export const useGameSocket = (url: string): UseGameSocket => {
     setReady,
     sendMove,
     sendEmoji,
+    restartRoom,
     reconnect,
   }
 }

@@ -32,6 +32,7 @@ function App() {
     setReady,
     sendMove,
     sendEmoji,
+    restartRoom,
     reconnect,
   } = useGameSocket(SERVER_URL)
 
@@ -96,6 +97,17 @@ function App() {
   const waitingForOpponent =
     roomState && seat && !roomState.winner && roomState.status === 'playing' && !opponentConnected
   const roomReady = seat ? roomState?.players[seat]?.ready : false
+  const showWinnerToast = Boolean(roomState?.winner)
+
+  const winnerLabel = roomState?.winner === 'A' ? '红方' : '蓝方'
+  const durationMs =
+    roomState?.startedAt && roomState?.endedAt
+      ? Math.max(roomState.endedAt - roomState.startedAt, 0)
+      : null
+  const durationText =
+    durationMs !== null
+      ? `${Math.floor(durationMs / 60000)}m ${Math.floor((durationMs % 60000) / 1000)}s`
+      : '—'
 
   useEffect(() => {
     const prev = prevIsOnlineTurnRef.current
@@ -192,6 +204,15 @@ function App() {
                   )
                 })}
               </div>
+              {roomState.winner && (
+                <button
+                  type="button"
+                  className="reset-btn"
+                  onClick={() => restartRoom(roomState.roomId)}
+                >
+                  开始新一轮
+                </button>
+              )}
             </section>
           )}
         </div>
@@ -243,6 +264,14 @@ function App() {
               <div className="toast-card toast-card--small">
                 <p className="toast-title">轮到你了</p>
               </div>
+            </div>
+          )}
+          {showWinnerToast && roomState && (
+            <div className="winner-toast" role="status" aria-live="polite">
+              <div className="winner-badge">胜者：{winnerLabel}</div>
+              <div className="winner-detail">房间号：{roomState.roomId}</div>
+              <div className="winner-detail">总步数：{roomState.moveCount}</div>
+              <div className="winner-detail">对局时长：{durationText}</div>
             </div>
           )}
           <Board

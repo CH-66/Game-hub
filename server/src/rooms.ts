@@ -18,6 +18,9 @@ type Room = {
   pieces: PieceMap
   currentPlayer: PlayerId
   winner: PlayerId | null
+  startedAt: number | null
+  endedAt: number | null
+  moveCount: number
   updatedAt: number
 }
 
@@ -40,7 +43,7 @@ export class RoomManager {
   private rooms = new Map<string, Room>()
   private playerIndex = new Map<string, PlayerIndex>()
   private board = createBoard(BOARD_SIZE)
-  private disconnectTimeoutMs = 2 * 60 * 1000
+  private disconnectTimeoutMs = 10 * 60 * 1000
 
   createRoom(socketId: string): { room: Room; seat: PlayerId; token: string } {
     let roomId = createRoomId()
@@ -59,6 +62,9 @@ export class RoomManager {
       pieces: createInitialPieces(this.board),
       currentPlayer: 'A',
       winner: null,
+      startedAt: null,
+      endedAt: null,
+      moveCount: 0,
       updatedAt: Date.now(),
     }
 
@@ -145,6 +151,9 @@ export class RoomManager {
 
     if (room.players.A?.ready && room.players.B?.ready) {
       room.status = 'playing'
+      room.startedAt = Date.now()
+      room.endedAt = null
+      room.moveCount = 0
     } else {
       room.status = 'waiting'
     }
@@ -195,9 +204,11 @@ export class RoomManager {
     room.pieces = nextPieces
     room.updatedAt = Date.now()
     slot.lastMoveAt = room.updatedAt
+    room.moveCount += 1
     room.winner = getWinner(nextPieces, this.board.homeA, this.board.homeB)
     if (room.winner) {
       room.status = 'finished'
+      room.endedAt = Date.now()
     } else {
       room.currentPlayer = index.seat === 'A' ? 'B' : 'A'
     }
@@ -260,6 +271,7 @@ export class RoomManager {
           room.winner = seat === 'A' ? 'B' : 'A'
           room.status = 'finished'
           room.updatedAt = now
+          room.endedAt = now
           updated.push(this.toRoomState(room))
         }
       })
@@ -319,7 +331,32 @@ export class RoomManager {
       currentPlayer: room.currentPlayer,
       pieces: room.pieces,
       winner: room.winner,
+      startedAt: room.startedAt,
+      endedAt: room.endedAt,
+      moveCount: room.moveCount,
       updatedAt: room.updatedAt,
     }
+  }
+
+  restart(roomId: string) {
+    const room = this.rooms.get(roomId)
+    if (!room) {
+      throw new Error('房间不存在')
+    }
+    room.status = 'waiting'
+    room.pieces = createInitialPieces(this.board)
+    room.currentPlayer = 'A'
+    room.winner = null
+    room.startedAt = null
+    room.endedAt = null
+    room.moveCount = 0
+    if (room.players.A) {
+      room.players.A.ready = false
+    }
+    if (room.players.B) {
+      room.players.B.ready = false
+    }
+    room.updatedAt = Date.now()
+    return room
   }
 }

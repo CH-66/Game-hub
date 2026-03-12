@@ -101,6 +101,15 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('emoji:receive', { roomId, emoji, from: seat, at: Date.now() })
   })
 
+  socket.on('room:restart', ({ roomId }) => {
+    try {
+      rooms.restart(roomId)
+      io.to(roomId).emit('room:state', rooms.getRoomState(roomId)!)
+    } catch (error) {
+      socket.emit('room:error', { message: (error as Error).message })
+    }
+  })
+
   socket.on('room:leave', ({ roomId }) => {
     rooms.leaveRoom(socket.id, roomId)
     const state = rooms.getRoomState(roomId)
