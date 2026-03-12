@@ -65,28 +65,41 @@ export const useGameSocket = (url: string): UseGameSocket => {
   )
 
   useEffect(() => {
-    socket.connect()
-    socket.on('connect', () => setConnected(true))
-    socket.on('disconnect', () => setConnected(false))
-    socket.on('room:state', (state) => {
+    const handleConnect = () => setConnected(true)
+    const handleDisconnect = () => setConnected(false)
+    const handleRoomState = (state: RoomState) => {
       setRoomState(state)
-    })
-    socket.on('room:joined', (payload) => {
+    }
+    const handleRoomJoined = (payload: { roomId: string; seat: PlayerId; token: string }) => {
       setSeat(payload.seat)
       writeSession(payload.roomId, payload.token)
       setHasSession(true)
-    })
-    socket.on('room:error', (payload) => {
+    }
+    const handleRoomError = (payload: { message: string }) => {
       setError(payload.message)
-    })
-    socket.on('emoji:receive', (payload) => {
+    }
+    const handleEmoji = (payload: EmojiPayload) => {
       setEmojiFeed((prev) => {
         const next = [payload, ...prev]
         return next.slice(0, 6)
       })
-    })
+    }
+
+    socket.connect()
+    socket.on('connect', handleConnect)
+    socket.on('disconnect', handleDisconnect)
+    socket.on('room:state', handleRoomState)
+    socket.on('room:joined', handleRoomJoined)
+    socket.on('room:error', handleRoomError)
+    socket.on('emoji:receive', handleEmoji)
 
     return () => {
+      socket.off('connect', handleConnect)
+      socket.off('disconnect', handleDisconnect)
+      socket.off('room:state', handleRoomState)
+      socket.off('room:joined', handleRoomJoined)
+      socket.off('room:error', handleRoomError)
+      socket.off('emoji:receive', handleEmoji)
       socket.disconnect()
     }
   }, [socket])
