@@ -87,6 +87,10 @@ export const useGameSocket = (url: string): UseGameSocket => {
         const next = [payload, ...prev]
         return next.slice(0, 6)
       })
+      setChatFeed((prev) => {
+        const next = [...prev, { roomId: payload.roomId, message: payload.emoji, from: payload.from, at: payload.at }]
+        return next.slice(-100)
+      })
     }
     const handleChat = (payload: ChatPayload) => {
       setChatFeed((prev) => {

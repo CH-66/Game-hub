@@ -17,9 +17,12 @@ function App() {
   const [validMoves, setValidMoves] = useState<Set<string>>(new Set())
   const [reconnectAttempted, setReconnectAttempted] = useState(false)
   const [showTurnToast, setShowTurnToast] = useState(false)
-  const [showChatToast, setShowChatToast] = useState(false)
   const [chatInput, setChatInput] = useState('')
+  const [barrageItems, setBarrageItems] = useState<
+    Array<{ id: string; emoji: string; from: PlayerId }>
+  >([])
   const prevIsOnlineTurnRef = useRef(false)
+  const lastEmojiAtRef = useRef<number | null>(null)
   const chatEndRef = useRef<HTMLDivElement | null>(null)
 
   const {
@@ -128,6 +131,23 @@ function App() {
   }, [isOnlineTurn])
 
   useEffect(() => {
+    if (emojiFeed.length === 0) {
+      return
+    }
+    const latest = emojiFeed[0]
+    if (lastEmojiAtRef.current === latest.at) {
+      return
+    }
+    lastEmojiAtRef.current = latest.at
+    const id = `${latest.at}-${latest.from}`
+    setBarrageItems((prev) => [...prev, { id, emoji: latest.emoji, from: latest.from }])
+    const timer = window.setTimeout(() => {
+      setBarrageItems((prev) => prev.filter((item) => item.id !== id))
+    }, 1400)
+    return () => window.clearTimeout(timer)
+  }, [emojiFeed])
+
+  useEffect(() => {
     if (chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' })
     }
@@ -151,8 +171,6 @@ function App() {
     }
     sendChat(roomState.roomId, text)
     setChatInput('')
-    setShowChatToast(true)
-    window.setTimeout(() => setShowChatToast(false), 900)
   }
 
   return (
@@ -291,13 +309,6 @@ function App() {
               </div>
             </div>
           )}
-          {showChatToast && (
-            <div className="toast-float" role="status" aria-live="polite">
-              <div className="toast-card toast-card--small toast-card--chat">
-                <p className="toast-title">消息已发送</p>
-              </div>
-            </div>
-          )}
           {showWinnerToast && roomState && (
             <div className="winner-toast" role="status" aria-live="polite">
               <div className="winner-badge">胜者：{winnerLabel}</div>
@@ -306,16 +317,31 @@ function App() {
               <div className="winner-detail">对局时长：{durationText}</div>
             </div>
           )}
-          <Board
-            positions={board.positions}
-            pieces={activePieces}
-            selected={selected}
-            validMoves={validMoves}
-            homeCells={homeCells}
-            highlightHome={highlightHome}
-            orientation={orientation}
-            onCellClick={handleCellClick}
-          />
+          <div className="board-wrap">
+            {barrageItems.length > 0 && (
+              <div className="barrage-stack" aria-live="polite">
+                {barrageItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`barrage-item ${item.from === 'A' ? 'player-a' : 'player-b'}`}
+                  >
+                    <span className="barrage-name">{item.from === 'A' ? '红方' : '蓝方'}</span>
+                    <span className="barrage-emoji">{item.emoji}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Board
+              positions={board.positions}
+              pieces={activePieces}
+              selected={selected}
+              validMoves={validMoves}
+              homeCells={homeCells}
+              highlightHome={highlightHome}
+              orientation={orientation}
+              onCellClick={handleCellClick}
+            />
+          </div>
           <section className="legend">
             <div className="legend-row">
               <span className="legend-dot player-a" />
@@ -338,22 +364,6 @@ function App() {
                     {emoji}
                   </button>
                 ))}
-              </div>
-              <div className="emoji-feed">
-                {emojiFeed.length === 0 ? (
-                  <span className="emoji-empty">还没有表情</span>
-                ) : (
-                  emojiFeed.map((item) => (
-                    <div key={`${item.at}-${item.emoji}`} className="emoji-item">
-                      <span
-                        className={`emoji-from ${item.from === 'A' ? 'player-a' : 'player-b'}`}
-                      >
-                        {item.from === 'A' ? '红方' : '蓝方'}
-                      </span>
-                      <span className="emoji-icon">{item.emoji}</span>
-                    </div>
-                  ))
-                )}
               </div>
             </div>
           </section>
