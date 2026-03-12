@@ -1,7 +1,7 @@
 import http from 'http'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import express from 'express'
+import express, { type Request, type Response } from 'express'
 import cors from 'cors'
 import { Server } from 'socket.io'
 import type { ClientToServerEvents, ServerToClientEvents } from '../../shared/protocol.js'
@@ -12,7 +12,7 @@ const PORT = Number(process.env.PORT || 4000)
 const app = express()
 app.use(cors())
 
-app.get('/health', (_req, res) => {
+app.get('/health', (_req: Request, res: Response) => {
   res.json({ ok: true })
 })
 
@@ -20,7 +20,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const clientDist = path.resolve(__dirname, '../../client/dist')
 app.use(express.static(clientDist))
-app.get('*', (_req, res) => {
+app.get('*', (_req: Request, res: Response) => {
   res.sendFile(path.join(clientDist, 'index.html'))
 })
 

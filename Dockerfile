@@ -25,4 +25,4 @@ COPY --from=server-build /app/server/dist /app/server/dist
 COPY --from=client-build /app/client/dist /app/client/dist
 
 EXPOSE 4000
-CMD ["node", "/app/server/dist/index.js"]
+CMD ["node", "/app/server/dist/server/src/index.js"]
