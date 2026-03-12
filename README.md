@@ -64,6 +64,17 @@ npm run build
 npm start
 ```
 
+## Docker
+
+构建并运行：
+
+```bash
+docker build -t chinese-checkers .
+docker run -p 4000:4000 chinese-checkers
+```
+
+镜像启动后可直接通过 `http://localhost:4000` 访问前端。
+
 ## 说明
 
 - 房间与对局状态由服务端权威维护
