@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Board from './components/Board'
 import { createBoard } from './rules/board'
 import type { PlayerId } from './rules/types'
@@ -16,6 +16,8 @@ function App() {
   const [selected, setSelected] = useState<string | null>(null)
   const [validMoves, setValidMoves] = useState<Set<string>>(new Set())
   const [reconnectAttempted, setReconnectAttempted] = useState(false)
+  const [showTurnToast, setShowTurnToast] = useState(false)
+  const prevIsOnlineTurnRef = useRef(false)
 
   const {
     roomState,
@@ -51,8 +53,13 @@ function App() {
       return
     }
 
+    const opponentSeat = seat === 'A' ? 'B' : 'A'
+    const opponentConnected = roomState.players[opponentSeat]?.connected ?? false
     const canAct =
-      roomState.status === 'playing' && roomState.currentPlayer === seat && !roomState.winner
+      roomState.status === 'playing' &&
+      roomState.currentPlayer === seat &&
+      !roomState.winner &&
+      opponentConnected
     const owner = roomState.pieces[key]
 
     if (owner === seat && canAct) {
@@ -74,16 +81,34 @@ function App() {
   }
 
   const activePieces = roomState?.pieces ?? {}
+  const opponentSeat = seat === 'A' ? 'B' : 'A'
+  const opponentConnected = seat ? roomState?.players[opponentSeat]?.connected ?? false : false
   const isOnlineTurn =
     roomState &&
     seat &&
     roomState.status === 'playing' &&
     roomState.currentPlayer === seat &&
-    !roomState.winner
+    !roomState.winner &&
+    opponentConnected
   const highlightHome = Boolean(isOnlineTurn)
   const homeCells = seat === 'B' ? board.homeB : board.homeA
   const orientation = seat === 'A' ? 'flipped' : 'normal'
+  const waitingForOpponent =
+    roomState && seat && !roomState.winner && roomState.status === 'playing' && !opponentConnected
   const roomReady = seat ? roomState?.players[seat]?.ready : false
+
+  useEffect(() => {
+    const prev = prevIsOnlineTurnRef.current
+    if (isOnlineTurn && !prev) {
+      setShowTurnToast(true)
+      const timer = window.setTimeout(() => {
+        setShowTurnToast(false)
+      }, 1200)
+      return () => window.clearTimeout(timer)
+    }
+    prevIsOnlineTurnRef.current = isOnlineTurn
+    return undefined
+  }, [isOnlineTurn])
 
   const handleJoin = () => {
     const value = roomInput.trim().toUpperCase()
@@ -101,28 +126,73 @@ function App() {
           <h1>跳跳棋 · 在线对战原型</h1>
           <p className="subtitle">仅在线房间对战，后续可扩展 4/6 人。</p>
         </div>
-        <div className="status-card">
-          <p className="status-label">连接状态</p>
-          <p className="status-player">{connected ? '已连接' : '未连接'}</p>
+        <div className="header-side">
+          <div className="status-card">
+            <p className="status-label">连接状态</p>
+            <p className="status-player">{connected ? '已连接' : '未连接'}</p>
+            {roomState && (
+              <>
+                <p className="status-label">房间号</p>
+                <p className="status-player">{roomState.roomId}</p>
+                <p className="status-label">你的座位</p>
+                <p className={`status-player ${seat === 'A' ? 'player-a' : 'player-b'}`}>
+                  {seat === 'A' ? '红方' : '蓝方'}
+                </p>
+                <button
+                  type="button"
+                  className="reset-btn"
+                  onClick={() => setReady(roomState.roomId, !roomReady)}
+                >
+                  {roomReady ? '取消准备' : '准备'}
+                </button>
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => leaveRoom(roomState.roomId)}
+                >
+                  离开房间
+                </button>
+              </>
+            )}
+          </div>
           {roomState && (
-            <>
-              <p className="status-label">房间号</p>
-              <p className="status-player">{roomState.roomId}</p>
-              <p className="status-label">你的座位</p>
-              <p className={`status-player ${seat === 'A' ? 'player-a' : 'player-b'}`}>
-                {seat === 'A' ? '红方' : '蓝方'}
-              </p>
-              <button
-                type="button"
-                className="reset-btn"
-                onClick={() => setReady(roomState.roomId, !roomReady)}
-              >
-                {roomReady ? '取消准备' : '准备'}
-              </button>
-              <button type="button" className="ghost-btn" onClick={() => leaveRoom(roomState.roomId)}>
-                离开房间
-              </button>
-            </>
+            <section className="room-status">
+              <div className="room-status-main">
+                <div>
+                  <p className="status-label">房间状态</p>
+                  <p className="status-player">
+                    {roomState.status === 'playing' ? '对局中' : '等待中'}
+                    {roomState.winner
+                      ? ` · 胜者 ${roomState.winner === 'A' ? '红方' : '蓝方'}`
+                      : ''}
+                  </p>
+                  <p className="room-id">房间号：{roomState.roomId}</p>
+                </div>
+                <div className="turn-pill">
+                  当前回合：
+                  {roomState.currentPlayer === 'A' ? '红方' : '蓝方'}
+                </div>
+              </div>
+              <div className="ready-list">
+                {(['A', 'B'] as const).map((side) => {
+                  const slot = roomState.players[side]
+                  const name = side === 'A' ? '红方' : '蓝方'
+                  return (
+                    <div key={side} className="ready-item">
+                      <span className={`ready-name ${side === 'A' ? 'player-a' : 'player-b'}`}>
+                        {name}
+                      </span>
+                      <span className={slot?.connected ? 'tag' : 'tag warn'}>
+                        {slot?.connected ? '在线' : '离线'}
+                      </span>
+                      <span className={slot?.ready ? 'tag ok' : 'tag'}>
+                        {slot?.ready ? '已准备' : '未准备'}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
           )}
         </div>
       </header>
@@ -160,43 +230,21 @@ function App() {
         </section>
       ) : (
         <main className="app-main">
-          <section className="room-status">
-            <div className="room-status-main">
-              <div>
-                <p className="status-label">房间状态</p>
-                <p className="status-player">
-                  {roomState.status === 'playing' ? '对局中' : '等待中'}
-                  {roomState.winner
-                    ? ` · 胜者 ${roomState.winner === 'A' ? '红方' : '蓝方'}`
-                    : ''}
-                </p>
-                <p className="room-id">房间号：{roomState.roomId}</p>
-              </div>
-              <div className="turn-pill">
-                当前回合：
-                {roomState.currentPlayer === 'A' ? '红方' : '蓝方'}
+          {waitingForOpponent && (
+            <div className="toast-mask" role="alert" aria-live="polite">
+              <div className="toast-card">
+                <p className="toast-title">对手已掉线</p>
+                <p className="toast-body">等待重连…</p>
               </div>
             </div>
-            <div className="ready-list">
-              {(['A', 'B'] as const).map((side) => {
-                const slot = roomState.players[side]
-                const name = side === 'A' ? '红方' : '蓝方'
-                return (
-                  <div key={side} className="ready-item">
-                    <span className={`ready-name ${side === 'A' ? 'player-a' : 'player-b'}`}>
-                      {name}
-                    </span>
-                    <span className={slot?.connected ? 'tag' : 'tag warn'}>
-                      {slot?.connected ? '在线' : '离线'}
-                    </span>
-                    <span className={slot?.ready ? 'tag ok' : 'tag'}>
-                      {slot?.ready ? '已准备' : '未准备'}
-                    </span>
-                  </div>
-                )
-              })}
+          )}
+          {showTurnToast && (
+            <div className="toast-float" role="status" aria-live="polite">
+              <div className="toast-card toast-card--small">
+                <p className="toast-title">轮到你了</p>
+              </div>
             </div>
-          </section>
+          )}
           <Board
             positions={board.positions}
             pieces={activePieces}
