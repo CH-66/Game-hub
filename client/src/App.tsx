@@ -319,11 +319,12 @@ function App() {
           )}
           <div className="board-wrap">
             {barrageItems.length > 0 && (
-              <div className="barrage-stack" aria-live="polite">
-                {barrageItems.map((item) => (
+              <div className="barrage-layer" aria-live="polite">
+                {barrageItems.map((item, index) => (
                   <div
                     key={item.id}
-                    className={`barrage-item ${item.from === 'A' ? 'player-a' : 'player-b'}`}
+                    className={`barrage-fly ${item.from === 'A' ? 'player-a' : 'player-b'}`}
+                    style={{ top: `calc(50% + ${(index % 3) * 30 - 30}px)` }}
                   >
                     <span className="barrage-name">{item.from === 'A' ? '红方' : '蓝方'}</span>
                     <span className="barrage-emoji">{item.emoji}</span>
