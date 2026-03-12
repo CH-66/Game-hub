@@ -140,9 +140,9 @@ function App() {
   const highlightHome = mode === 'online' ? isOnlineTurn : localHighlightHome
   const homeCells =
     mode === 'online'
-      ? seat === 'A'
-        ? board.homeA
-        : board.homeB
+      ? seat === 'B'
+        ? board.homeB
+        : board.homeA
       : currentPlayer === 'A'
         ? board.homeA
         : board.homeB
