@@ -17,7 +17,10 @@ function App() {
   const [validMoves, setValidMoves] = useState<Set<string>>(new Set())
   const [reconnectAttempted, setReconnectAttempted] = useState(false)
   const [showTurnToast, setShowTurnToast] = useState(false)
+  const [showChatToast, setShowChatToast] = useState(false)
+  const [chatInput, setChatInput] = useState('')
   const prevIsOnlineTurnRef = useRef(false)
+  const chatEndRef = useRef<HTMLDivElement | null>(null)
 
   const {
     roomState,
@@ -26,12 +29,14 @@ function App() {
     connected,
     hasSession,
     emojiFeed,
+    chatFeed,
     createRoom,
     joinRoom,
     leaveRoom,
     setReady,
     sendMove,
     sendEmoji,
+    sendChat,
     restartRoom,
     reconnect,
   } = useGameSocket(SERVER_URL)
@@ -122,12 +127,32 @@ function App() {
     return undefined
   }, [isOnlineTurn])
 
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }
+  }, [chatFeed])
+
   const handleJoin = () => {
     const value = roomInput.trim().toUpperCase()
     if (!value) {
       return
     }
     joinRoom(value)
+  }
+
+  const handleSendChat = () => {
+    if (!roomState) {
+      return
+    }
+    const text = chatInput.trim()
+    if (!text) {
+      return
+    }
+    sendChat(roomState.roomId, text)
+    setChatInput('')
+    setShowChatToast(true)
+    window.setTimeout(() => setShowChatToast(false), 900)
   }
 
   return (
@@ -266,6 +291,13 @@ function App() {
               </div>
             </div>
           )}
+          {showChatToast && (
+            <div className="toast-float" role="status" aria-live="polite">
+              <div className="toast-card toast-card--small toast-card--chat">
+                <p className="toast-title">消息已发送</p>
+              </div>
+            </div>
+          )}
           {showWinnerToast && roomState && (
             <div className="winner-toast" role="status" aria-live="polite">
               <div className="winner-badge">胜者：{winnerLabel}</div>
@@ -323,6 +355,40 @@ function App() {
                   ))
                 )}
               </div>
+            </div>
+          </section>
+          <section className="chat-panel">
+            <div className="chat-header">房间消息</div>
+            <div className="chat-body">
+              {chatFeed.length === 0 ? (
+                <div className="chat-empty">暂无消息</div>
+              ) : (
+                chatFeed.map((item) => (
+                  <div key={`${item.at}-${item.from}`} className="chat-row">
+                    <span className={`chat-name ${item.from === 'A' ? 'player-a' : 'player-b'}`}>
+                      {item.from === 'A' ? '红方' : '蓝方'}
+                    </span>
+                    <span className="chat-text">{item.message}</span>
+                  </div>
+                ))
+              )}
+              <div ref={chatEndRef} />
+            </div>
+            <div className="chat-input">
+              <input
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                placeholder="发送一条消息…"
+                maxLength={120}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    handleSendChat()
+                  }
+                }}
+              />
+              <button type="button" className="ghost-btn" onClick={handleSendChat}>
+                发送
+              </button>
             </div>
           </section>
         </main>

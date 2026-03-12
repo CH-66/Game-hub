@@ -24,6 +24,7 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
 
 const rooms = new RoomManager()
 const ALLOWED_EMOJIS = ['🎉', '🔥', '😎', '👏', '😅', '👀']
+const MAX_CHAT_LENGTH = 120
 
 setInterval(() => {
   const updates = rooms.checkTimeouts()
@@ -99,6 +100,23 @@ io.on('connection', (socket) => {
       return
     }
     io.to(roomId).emit('emoji:receive', { roomId, emoji, from: seat, at: Date.now() })
+  })
+
+  socket.on('chat:send', ({ roomId, message }) => {
+    const seat = rooms.getSeat(socket.id, roomId)
+    if (!seat) {
+      socket.emit('room:error', { message: '玩家未在房间内' })
+      return
+    }
+    const text = message.trim()
+    if (!text) {
+      return
+    }
+    if (text.length > MAX_CHAT_LENGTH) {
+      socket.emit('room:error', { message: '消息过长' })
+      return
+    }
+    io.to(roomId).emit('chat:receive', { roomId, message: text, from: seat, at: Date.now() })
   })
 
   socket.on('room:restart', ({ roomId }) => {

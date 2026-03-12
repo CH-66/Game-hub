@@ -53,11 +53,19 @@ export type EmojiPayload = {
   at: number
 }
 
+export type ChatPayload = {
+  roomId: string
+  message: string
+  from: PlayerId
+  at: number
+}
+
 export interface ServerToClientEvents {
   'room:state': (state: RoomState) => void
   'room:joined': (payload: RoomJoinedPayload) => void
   'room:error': (payload: RoomErrorPayload) => void
   'emoji:receive': (payload: EmojiPayload) => void
+  'chat:receive': (payload: ChatPayload) => void
 }
 
 export interface ClientToServerEvents {
@@ -69,4 +77,5 @@ export interface ClientToServerEvents {
   'move:intent': (payload: MoveIntent) => void
   'emoji:send': (payload: { roomId: string; emoji: string }) => void
   'room:restart': (payload: { roomId: string }) => void
+  'chat:send': (payload: { roomId: string; message: string }) => void
 }

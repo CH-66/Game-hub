@@ -353,6 +353,66 @@
   font-size: 0.85rem;
 }
 
+.chat-panel {
+  width: min(860px, 100%);
+  background: rgba(15, 19, 25, 0.85);
+  border-radius: 20px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-header {
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.chat-body {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 14px;
+  padding: 12px;
+  height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.chat-name {
+  font-weight: 600;
+  min-width: 44px;
+}
+
+.chat-text {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.chat-empty {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.chat-input {
+  display: flex;
+  gap: 10px;
+}
+
+.chat-input input {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f6f2ea;
+}
+
 .toast-mask {
   position: fixed;
   inset: 0;
@@ -381,6 +441,11 @@
   background: linear-gradient(140deg, rgba(242, 178, 76, 0.95), rgba(245, 127, 74, 0.95));
   border-color: rgba(255, 255, 255, 0.35);
   color: #201308;
+}
+
+.toast-card--chat {
+  background: linear-gradient(140deg, rgba(102, 209, 170, 0.95), rgba(85, 180, 220, 0.95));
+  color: #0b1d1a;
 }
 
 .toast-float {

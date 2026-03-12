@@ -5,6 +5,7 @@ import type {
   ServerToClientEvents,
   RoomState,
   EmojiPayload,
+  ChatPayload,
 } from '@shared/protocol'
 import type { PlayerId } from '@shared/types'
 
@@ -15,12 +16,14 @@ type UseGameSocket = {
   connected: boolean
   hasSession: boolean
   emojiFeed: EmojiPayload[]
+  chatFeed: ChatPayload[]
   createRoom: () => void
   joinRoom: (roomId: string) => void
   leaveRoom: (roomId: string) => void
   setReady: (roomId: string, ready: boolean) => void
   sendMove: (roomId: string, from: string, to: string) => void
   sendEmoji: (roomId: string, emoji: string) => void
+  sendChat: (roomId: string, message: string) => void
   restartRoom: (roomId: string) => void
   reconnect: () => void
 }
@@ -58,6 +61,7 @@ export const useGameSocket = (url: string): UseGameSocket => {
   const [connected, setConnected] = useState(false)
   const [hasSession, setHasSession] = useState(() => Boolean(readSession()))
   const [emojiFeed, setEmojiFeed] = useState<EmojiPayload[]>([])
+  const [chatFeed, setChatFeed] = useState<ChatPayload[]>([])
 
   const socket: Socket<ServerToClientEvents, ClientToServerEvents> = useMemo(
     () => io(url, { autoConnect: false }),
@@ -84,6 +88,12 @@ export const useGameSocket = (url: string): UseGameSocket => {
         return next.slice(0, 6)
       })
     }
+    const handleChat = (payload: ChatPayload) => {
+      setChatFeed((prev) => {
+        const next = [...prev, payload]
+        return next.slice(-100)
+      })
+    }
 
     socket.connect()
     socket.on('connect', handleConnect)
@@ -92,6 +102,7 @@ export const useGameSocket = (url: string): UseGameSocket => {
     socket.on('room:joined', handleRoomJoined)
     socket.on('room:error', handleRoomError)
     socket.on('emoji:receive', handleEmoji)
+    socket.on('chat:receive', handleChat)
 
     return () => {
       socket.off('connect', handleConnect)
@@ -100,6 +111,7 @@ export const useGameSocket = (url: string): UseGameSocket => {
       socket.off('room:joined', handleRoomJoined)
       socket.off('room:error', handleRoomError)
       socket.off('emoji:receive', handleEmoji)
+      socket.off('chat:receive', handleChat)
       socket.disconnect()
     }
   }, [socket])
@@ -142,6 +154,10 @@ export const useGameSocket = (url: string): UseGameSocket => {
     socket.emit('emoji:send', { roomId, emoji })
   }
 
+  const sendChat = (roomId: string, message: string) => {
+    socket.emit('chat:send', { roomId, message })
+  }
+
   const restartRoom = (roomId: string) => {
     socket.emit('room:restart', { roomId })
   }
@@ -153,12 +169,14 @@ export const useGameSocket = (url: string): UseGameSocket => {
     connected,
     hasSession,
     emojiFeed,
+    chatFeed,
     createRoom,
     joinRoom,
     leaveRoom,
     setReady,
     sendMove,
     sendEmoji,
+    sendChat,
     restartRoom,
     reconnect,
   }
