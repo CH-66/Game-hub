@@ -3,6 +3,7 @@ WORKDIR /app/client
 COPY client/package.json client/package-lock.json ./
 RUN npm ci
 COPY client/ .
+COPY shared/ /app/shared/
 RUN npm run build
 
 FROM node:22-alpine AS server-build
