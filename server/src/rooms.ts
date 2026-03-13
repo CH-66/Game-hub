@@ -1,6 +1,6 @@
 import crypto from 'crypto'
-import type { PlayerId, PieceMap } from '../../../shared/types.js'
-import type { RoomState, RoomStatus, PlayerSlot } from '../../../shared/protocol.js'
+import type { PlayerId, PieceMap } from '../../shared/types.js'
+import type { RoomState, RoomStatus, PlayerSlot } from '../../shared/protocol.js'
 import { createBoard, createInitialPieces } from './rules/board.js'
 import { getValidMoves } from './rules/move.js'
 import { getWinner } from './rules/win.js'

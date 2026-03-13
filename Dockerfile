@@ -15,14 +15,19 @@ COPY shared/ /app/shared/
 RUN npm run build
 
 FROM node:22-alpine AS runtime
-WORKDIR /app
+WORKDIR /app/server
 ENV NODE_ENV=production
+ENV PORT=4000
 
-COPY server/package.json server/package-lock.json /app/server/
-RUN cd /app/server && npm ci --omit=dev
+COPY server/package.json server/package-lock.json ./
+RUN npm ci --omit=dev
 
-COPY --from=server-build /app/server/dist /app/server/dist
+COPY --from=server-build /app/server/dist ./dist
 COPY --from=client-build /app/client/dist /app/client/dist
 
 EXPOSE 4000
-CMD ["node", "/app/server/dist/server/src/index.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD wget -qO- "http://127.0.0.1:${PORT}/health" || exit 1
+
+USER node
+
+CMD ["node", "dist/server/src/index.js"]

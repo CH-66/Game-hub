@@ -7,7 +7,7 @@ import { useGameSocket } from './net/useGameSocket'
 import './App.css'
 
 const BOARD_SIZE = 4
-const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:4000'
+const SERVER_URL = import.meta.env.VITE_SERVER_URL?.trim() || window.location.origin
 const EMOJI_LIST = ['🎉', '🔥', '😎', '👏', '😅', '👀']
 
 function App() {
@@ -92,13 +92,14 @@ function App() {
   const activePieces = roomState?.pieces ?? {}
   const opponentSeat = seat === 'A' ? 'B' : 'A'
   const opponentConnected = seat ? roomState?.players[opponentSeat]?.connected ?? false : false
-  const isOnlineTurn =
+  const isOnlineTurn = Boolean(
     roomState &&
-    seat &&
-    roomState.status === 'playing' &&
-    roomState.currentPlayer === seat &&
-    !roomState.winner &&
-    opponentConnected
+      seat &&
+      roomState.status === 'playing' &&
+      roomState.currentPlayer === seat &&
+      !roomState.winner &&
+      opponentConnected,
+  )
   const highlightHome = Boolean(isOnlineTurn)
   const homeCells = seat === 'B' ? board.homeB : board.homeA
   const orientation = seat === 'A' ? 'flipped' : 'normal'
