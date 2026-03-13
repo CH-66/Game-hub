@@ -131,6 +131,7 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 40px 80px rgba(0, 0, 0, 0.45);
   transform-origin: center;
+  overflow: hidden;
 }
 
 .board.flipped {
@@ -177,10 +178,17 @@
   transform: translate(-50%, -50%);
   cursor: pointer;
   padding: 0;
+  transition:
+    transform 220ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    background 220ms ease,
+    opacity 180ms ease;
 }
 
 .cell:hover {
   border-color: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -52%);
 }
 
 .cell-dot {
@@ -190,16 +198,24 @@
   margin: 3px auto 0;
   border-radius: 50%;
   background: transparent;
+  transition:
+    transform 220ms ease,
+    box-shadow 220ms ease,
+    opacity 160ms ease;
 }
 
 .cell.occupied .cell-dot {
   background: #d94d4d;
-  box-shadow: 0 8px 16px rgba(217, 77, 77, 0.4);
+  box-shadow:
+    0 8px 16px rgba(217, 77, 77, 0.35),
+    inset 0 2px 4px rgba(255, 255, 255, 0.2);
 }
 
 .cell.player-b.occupied .cell-dot {
   background: #4b87f1;
-  box-shadow: 0 8px 16px rgba(75, 135, 241, 0.4);
+  box-shadow:
+    0 8px 16px rgba(75, 135, 241, 0.35),
+    inset 0 2px 4px rgba(255, 255, 255, 0.22);
 }
 
 .cell.move {
@@ -210,6 +226,64 @@
 .cell.selected {
   border-color: #f2b24c;
   box-shadow: 0 0 0 3px rgba(242, 178, 76, 0.25);
+}
+
+.cell.selected .cell-dot {
+  animation: selectedBounce 900ms ease-in-out infinite;
+}
+
+.cell.arriving .cell-dot {
+  opacity: 0;
+}
+
+.move-overlay {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  will-change: left, top, transform;
+}
+
+.move-overlay .cell-dot {
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 3px auto 0;
+  border-radius: 50%;
+  transform: scale(var(--piece-scale-x, 1), var(--piece-scale-y, 1));
+  transition: transform 60ms linear;
+}
+
+.move-overlay.player-a .cell-dot {
+  background: radial-gradient(circle at 30% 30%, #ffd1d1, #d94d4d 70%);
+  box-shadow:
+    0 calc(10px * var(--piece-shadow-strength, 1)) calc(20px * var(--piece-shadow-strength, 1))
+      rgba(217, 77, 77, 0.38),
+    inset 0 2px 4px rgba(255, 255, 255, 0.22);
+}
+
+.move-overlay.player-b .cell-dot {
+  background: radial-gradient(circle at 30% 30%, #d8e7ff, #4b87f1 70%);
+  box-shadow:
+    0 calc(10px * var(--piece-shadow-strength, 1)) calc(20px * var(--piece-shadow-strength, 1))
+      rgba(75, 135, 241, 0.38),
+    inset 0 2px 4px rgba(255, 255, 255, 0.24);
+}
+
+@keyframes selectedBounce {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  40% {
+    transform: translateY(-4px) scale(1.04);
+  }
+  60% {
+    transform: translateY(-2px) scale(0.98);
+  }
 }
 
 .legend {
@@ -265,6 +339,11 @@
   padding: 6px 10px;
   cursor: pointer;
   font-size: 1rem;
+}
+
+.emoji-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .emoji-feed {
@@ -616,5 +695,20 @@
 
   .room-status {
     width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-outline.pulse,
+  .cell.selected .cell-dot,
+  .move-overlay,
+  .barrage-fly,
+  .toast-card {
+    animation: none !important;
+  }
+
+  .cell,
+  .cell-dot {
+    transition: none;
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import type {
   ClientToServerEvents,
@@ -15,7 +15,7 @@ type UseGameSocket = {
   error: string | null
   connected: boolean
   hasSession: boolean
-  emojiFeed: EmojiPayload[]
+  emojiFeed: Array<EmojiPayload & { localId: string }>
   chatFeed: ChatPayload[]
   createRoom: () => void
   joinRoom: (roomId: string) => void
@@ -60,8 +60,9 @@ export const useGameSocket = (url: string): UseGameSocket => {
   const [error, setError] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
   const [hasSession, setHasSession] = useState(() => Boolean(readSession()))
-  const [emojiFeed, setEmojiFeed] = useState<EmojiPayload[]>([])
+  const [emojiFeed, setEmojiFeed] = useState<Array<EmojiPayload & { localId: string }>>([])
   const [chatFeed, setChatFeed] = useState<ChatPayload[]>([])
+  const emojiCounterRef = useRef(0)
 
   const socket: Socket<ServerToClientEvents, ClientToServerEvents> = useMemo(
     () => io(url, { autoConnect: false }),
@@ -83,8 +84,10 @@ export const useGameSocket = (url: string): UseGameSocket => {
       setError(payload.message)
     }
     const handleEmoji = (payload: EmojiPayload) => {
+      emojiCounterRef.current += 1
+      const localPayload = { ...payload, localId: `emoji-${payload.at}-${emojiCounterRef.current}` }
       setEmojiFeed((prev) => {
-        const next = [payload, ...prev]
+        const next = [localPayload, ...prev]
         return next.slice(0, 6)
       })
       setChatFeed((prev) => {
