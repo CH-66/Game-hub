@@ -1,105 +1,84 @@
 # Game-hub
 
-Game-hub 是一个跳跳棋在线对战项目，当前包含客户端与服务端，支持 2 人在线对战，后续可扩展 4/6 人。
+Game-hub 是一个跳跳棋在线对战项目，当前仓库已经落地为适合 Cloudflare 的部署形态：
+
+- 前端：React + Vite + TypeScript
+- 实时后端：Cloudflare Workers + Durable Objects + WebSocket
+- 共享协议：`shared/`
+- 棋盘与规则：复用 `server/src/rules/`
 
 ## 目录结构
 
-- `client/` 前端 React + Vite
-- `server/` 后端 Node.js + Socket.IO
-- `shared/` 前后端共享协议类型
-- `doc/` 里程碑与实施文档
+- `client/`：前端应用
+- `server/`：原 Node.js 版本服务端与规则实现
+- `shared/`：前后端共享类型与协议
+- `worker/`：Cloudflare Worker 与 Durable Object 运行时
+- `doc/`：里程碑与部署文档
 
-## 本地运行
+## 本地开发
 
-### 一句命令启动（推荐）
+先安装依赖：
+
+```bash
+npm install --registry=https://registry.npmjs.org/
+npm --prefix client install --registry=https://registry.npmjs.org/
+```
+
+启动 Cloudflare Worker + 前端本地联调：
 
 ```bash
 npm run dev
 ```
 
-首次执行需要在根目录安装依赖：
+说明：
+
+- Worker 默认由 `wrangler dev` 提供，地址通常为 `http://127.0.0.1:8787`
+- 前端开发服务器会通过 `VITE_SERVER_URL=http://127.0.0.1:8787` 连接本地 Worker
+
+## Cloudflare 部署
+
+构建前端静态资源：
 
 ```bash
-npm install
+npm run build:cloudflare
 ```
 
-### 分别启动（可选）
+部署到 Cloudflare：
 
 ```bash
-cd server
-npm install
-npm run dev
+npm run deploy:cloudflare
 ```
+
+当前已部署地址：
+
+- [https://game-hub.yongee.workers.dev](https://game-hub.yongee.workers.dev)
+
+更多部署细节请查看：
+
+- [Cloudflare 部署说明](/E:/python/game-hub/doc/cloudflare-deployment.md)
+
+## 架构说明
+
+- 静态页面通过 Worker `assets` 绑定托管
+- 每个房间对应一个 Durable Object 实例
+- 客户端通过 HTTP 发送操作意图，通过 WebSocket 接收房间状态广播
+- 房间状态、回合校验、断线超时判定都由服务端权威维护
+
+## 验证命令
+
+健康检查：
 
 ```bash
-cd client
-npm install
-npm run dev
+curl https://game-hub.yongee.workers.dev/health
 ```
 
-默认端口：`4000`（可用 `PORT` 环境变量修改）
-
-### 2. 启动客户端
+查看当前部署版本：
 
 ```bash
-cd client
-npm install
-npm run dev
+npx wrangler deployments list
 ```
 
-默认会连接 `http://localhost:4000`。如需修改，设置：
+## 备注
 
-```bash
-VITE_SERVER_URL=http://localhost:4000
-```
-
-## Git 协作流程
-
-- 涉及新功能时，先从主分支拉出新分支开发
-- 功能完成后先本地测试通过，再通过 PR 合并
-- 避免直接在 `main` 上开发新功能
-- 分支合并完成后，及时删除已合并的本地与远程分支，保持仓库整洁
-
-## 生产构建
-
-```bash
-cd client
-npm run build
-
-cd ../server
-npm run build
-npm start
-```
-
-## Docker
-
-推荐直接阅读部署文档：
-
-- [Docker 部署说明](./doc/docker-deployment.md)
-
-快速启动：
-
-```bash
-docker compose up -d --build
-```
-
-或使用原生 Docker：
-
-```bash
-docker build -t game-hub:latest .
-docker run -d --name game-hub -p 4000:4000 game-hub:latest
-```
-
-启动后可直接通过 `http://localhost:4000` 访问前端，健康检查地址为 `http://localhost:4000/health`。
-
-## 说明
-
-- 房间与对局状态由服务端权威维护
-- 支持断线重连（基于本地 session token）
-- 表情包由服务端校验并广播
-
-## 常见问题与排障
-
-- 无法连接服务端：确认 `server` 已启动且端口一致，客户端 `VITE_SERVER_URL` 指向正确地址
-- 房间号无效：确认对方已经创建房间并分享正确房间号
-- 断线重连失败：清理浏览器 LocalStorage 后重新创建房间
+- `server/` 仍保留原 Node.js 版本代码，便于对照规则逻辑
+- 生产部署链路已切换到 Cloudflare Worker，不再依赖 Express + Socket.IO

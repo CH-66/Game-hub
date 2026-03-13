@@ -31,9 +31,15 @@ export type RoomJoinPayload = {
   roomId: string
 }
 
+export type RoomReconnectPayload = {
+  roomId: string
+  token: string
+}
+
 export type RoomReadyPayload = {
   roomId: string
   ready: boolean
+  token: string
 }
 
 export type RoomJoinedPayload = {
@@ -60,9 +66,61 @@ export type ChatPayload = {
   at: number
 }
 
+export type RestartPayload = {
+  roomId: string
+  token: string
+}
+
+export type LeaveRoomPayload = {
+  roomId: string
+  token: string
+}
+
+export type EmojiSendPayload = {
+  roomId: string
+  emoji: string
+  token: string
+}
+
+export type ChatSendPayload = {
+  roomId: string
+  message: string
+  token: string
+}
+
+export type ServerEventMap = {
+  'room:state': RoomState
+  'room:error': RoomErrorPayload
+  'emoji:receive': EmojiPayload
+  'chat:receive': ChatPayload
+}
+
+export type ClientEventMap = {
+  'room:create': undefined
+  'room:join': RoomJoinPayload
+  'room:reconnect': RoomReconnectPayload
+  'room:ready': RoomReadyPayload
+  'room:leave': LeaveRoomPayload
+  'move:intent': MoveIntent & { token: string }
+  'emoji:send': EmojiSendPayload
+  'room:restart': RestartPayload
+  'chat:send': ChatSendPayload
+}
+
+type EventEnvelope<TType extends string, TPayload> = TPayload extends undefined
+  ? { type: TType }
+  : { type: TType; payload: TPayload }
+
+export type ServerEvent = {
+  [Type in keyof ServerEventMap]: EventEnvelope<Type, ServerEventMap[Type]>
+}[keyof ServerEventMap]
+
+export type ClientEvent = {
+  [Type in keyof ClientEventMap]: EventEnvelope<Type, ClientEventMap[Type]>
+}[keyof ClientEventMap]
+
 export interface ServerToClientEvents {
   'room:state': (state: RoomState) => void
-  'room:joined': (payload: RoomJoinedPayload) => void
   'room:error': (payload: RoomErrorPayload) => void
   'emoji:receive': (payload: EmojiPayload) => void
   'chat:receive': (payload: ChatPayload) => void
@@ -72,7 +130,7 @@ export interface ClientToServerEvents {
   'room:create': () => void
   'room:join': (payload: RoomJoinPayload) => void
   'room:reconnect': (payload: { roomId: string; token: string }) => void
-  'room:ready': (payload: RoomReadyPayload) => void
+  'room:ready': (payload: { roomId: string; ready: boolean }) => void
   'room:leave': (payload: RoomJoinPayload) => void
   'move:intent': (payload: MoveIntent) => void
   'emoji:send': (payload: { roomId: string; emoji: string }) => void
