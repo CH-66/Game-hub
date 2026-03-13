@@ -50,6 +50,7 @@ type JsonObject = Record<string, unknown>
 const ROOM_STATE_KEY = 'room'
 const BOARD_SIZE = 4
 const DISCONNECT_TIMEOUT_MS = 10 * 60 * 1000
+const EMPTY_ROOM_GRACE_MS = 30 * 1000
 const MAX_CHAT_LENGTH = 120
 const EMOJI_COOLDOWN_MS = 1200
 const CHAT_COOLDOWN_MS = 900
@@ -98,7 +99,6 @@ const isChatSendPayload = (payload: JsonObject): payload is ChatSendPayload =>
 
 export class GameRoom extends DurableObject {
   private room: Room | null = null
-  private sockets = new Map<WebSocket, SocketAttachment>()
 
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env)
@@ -106,6 +106,7 @@ export class GameRoom extends DurableObject {
     ctx.blockConcurrencyWhile(async () => {
       this.room = await ctx.storage.get<Room>(ROOM_STATE_KEY)
       if (this.room) {
+        await this.restoreConnectionFlags()
         await this.scheduleDisconnectAlarm()
       }
     })
@@ -175,6 +176,12 @@ export class GameRoom extends DurableObject {
     }
 
     const now = Date.now()
+
+    if (this.shouldReapIdleRoom(now)) {
+      await this.destroyRoom()
+      return
+    }
+
     let changed = false
 
     ;(['A', 'B'] as const).forEach((seat) => {
@@ -199,25 +206,30 @@ export class GameRoom extends DurableObject {
     await this.scheduleDisconnectAlarm()
   }
 
-  private async handleSocketClose(ws: WebSocket): Promise<void> {
+  async webSocketMessage(_ws: WebSocket, _message: ArrayBuffer | string): Promise<void> {}
+
+  async webSocketClose(ws: WebSocket): Promise<void> {
     if (!this.room) {
       return
     }
 
-    const attachment = this.sockets.get(ws)
+    const attachment = this.readAttachment(ws)
     if (!attachment) {
       return
     }
-    this.sockets.delete(ws)
 
     const slot = this.room.players[attachment.seat]
     if (!slot || slot.token !== attachment.token) {
       return
     }
 
-    const hasSiblingSocket = [...this.sockets.values()].some(
-      (meta) => meta.seat === attachment.seat && meta.token === attachment.token,
-    )
+    const hasSiblingSocket = this.getSockets().some((socket) => {
+      if (socket === ws) {
+        return false
+      }
+      const meta = this.readAttachment(socket)
+      return meta?.seat === attachment.seat && meta.token === attachment.token
+    })
 
     if (hasSiblingSocket) {
       return
@@ -226,9 +238,12 @@ export class GameRoom extends DurableObject {
     slot.connected = false
     slot.disconnectedAt = Date.now()
     this.room.updatedAt = Date.now()
+
     await this.persistRoom()
     await this.scheduleDisconnectAlarm()
-    this.broadcastEvent('room:state', this.toRoomState())
+    if (!this.hasNoConnectedPlayers()) {
+      this.broadcastEvent('room:state', this.toRoomState())
+    }
   }
 
   private async handleCreate(request: Request): Promise<Response> {
@@ -480,8 +495,7 @@ export class GameRoom extends DurableObject {
     this.closeSeatSockets(seat, payload.token, 1000, 'Left room.')
 
     if (!room.players.A && !room.players.B) {
-      this.room = null
-      await this.ctx.storage.deleteAll()
+      await this.destroyRoom()
       return new Response(null, { status: 204 })
     }
 
@@ -518,12 +532,12 @@ export class GameRoom extends DurableObject {
     const slot = room.players[seat]
     assert(slot, 'Player not found.')
 
-    const socketsForSeat = [...this.sockets.entries()]
-      .filter(([, attachment]) => attachment.seat === seat && attachment.token === token)
-      .map(([socket]) => socket)
+    const socketsForSeat = this.getSockets().filter((socket) => {
+      const attachment = this.readAttachment(socket)
+      return attachment?.seat === seat && attachment.token === token
+    })
 
     socketsForSeat.forEach((socket) => {
-      this.sockets.delete(socket)
       socket.close(1000, 'Superseded by a newer connection.')
     })
 
@@ -531,25 +545,40 @@ export class GameRoom extends DurableObject {
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket]
     const attachment: SocketAttachment = { seat, token }
 
-    server.accept()
-    this.sockets.set(server, attachment)
-    server.addEventListener('close', () => {
-      void this.handleSocketClose(server)
-    })
-    server.addEventListener('message', () => {})
+    server.serializeAttachment(attachment)
+    this.ctx.acceptWebSocket(server)
 
     slot.connected = true
     slot.disconnectedAt = undefined
     room.updatedAt = Date.now()
     await this.persistRoom()
-    await this.ctx.storage.deleteAlarm()
+    await this.scheduleDisconnectAlarm()
 
     return new Response(null, { status: 101, webSocket: client })
   }
+
+  private getSockets(): WebSocket[] {
+    return this.ctx.getWebSockets()
+  }
+
+  private readAttachment(socket: WebSocket): SocketAttachment | null {
+    const attachment = socket.deserializeAttachment()
+    if (!isObject(attachment) || !isString(attachment.seat) || !isString(attachment.token)) {
+      return null
+    }
+    if (attachment.seat !== 'A' && attachment.seat !== 'B') {
+      return null
+    }
+    return {
+      seat: attachment.seat,
+      token: attachment.token,
+    }
+  }
+
   private closeSeatSockets(seat: PlayerId, token: string, code: number, reason: string): void {
-    ;[...this.sockets.entries()].forEach(([socket, attachment]) => {
-      if (attachment.seat === seat && attachment.token === token) {
-        this.sockets.delete(socket)
+    this.getSockets().forEach((socket) => {
+      const attachment = this.readAttachment(socket)
+      if (attachment?.seat === seat && attachment.token === token) {
         socket.close(code, reason)
       }
     })
@@ -564,7 +593,7 @@ export class GameRoom extends DurableObject {
         : ChatPayload,
   ): void {
     const encoded = JSON.stringify({ type, payload })
-    this.sockets.forEach((_, socket) => socket.send(encoded))
+    this.getSockets().forEach((socket) => socket.send(encoded))
   }
 
   private requireRoom(expectedRoomId?: string): Room {
@@ -625,16 +654,90 @@ export class GameRoom extends DurableObject {
     await this.ctx.storage.put(ROOM_STATE_KEY, this.room)
   }
 
+  private hasNoConnectedPlayers(): boolean {
+    if (!this.room) {
+      return true
+    }
+
+    return !(['A', 'B'] as const).some((seat) => this.room?.players[seat]?.connected)
+  }
+
+  private async destroyRoom(): Promise<void> {
+    this.room = null
+    this.getSockets().forEach((socket) => {
+      try {
+        socket.close(1001, 'Room closed to conserve resources.')
+      } catch {
+        // Ignore already-closed sockets during teardown.
+      }
+    })
+    await this.ctx.storage.deleteAlarm()
+    await this.ctx.storage.deleteAll()
+  }
+
+  private async restoreConnectionFlags(): Promise<void> {
+    if (!this.room) {
+      return
+    }
+
+    let changed = false
+
+    ;(['A', 'B'] as const).forEach((seat) => {
+      const slot = this.room?.players[seat]
+      if (!slot) {
+        return
+      }
+
+      const connected = this.getSockets().some((socket) => {
+        const attachment = this.readAttachment(socket)
+        return attachment?.seat === seat && attachment.token === slot.token
+      })
+
+      if (slot.connected !== connected) {
+        changed = true
+        slot.connected = connected
+        slot.disconnectedAt = connected ? undefined : slot.disconnectedAt ?? Date.now()
+      }
+    })
+
+    if (changed) {
+      this.room.updatedAt = Date.now()
+      await this.persistRoom()
+    }
+  }
+
+  private shouldReapIdleRoom(now = Date.now()): boolean {
+    if (!this.room || !this.hasNoConnectedPlayers()) {
+      return false
+    }
+
+    const lastDisconnectedAt = this.getLastDisconnectedAt()
+    return lastDisconnectedAt !== null && now - lastDisconnectedAt >= EMPTY_ROOM_GRACE_MS
+  }
+
   private async scheduleDisconnectAlarm(): Promise<void> {
-    if (!this.room || this.room.status !== 'playing' || this.room.winner) {
+    if (!this.room) {
       await this.ctx.storage.deleteAlarm()
       return
     }
 
-    const alarms = (['A', 'B'] as const)
-      .map((seat) => this.room?.players[seat]?.disconnectedAt)
-      .filter((value): value is number => typeof value === 'number')
-      .map((disconnectedAt) => disconnectedAt + DISCONNECT_TIMEOUT_MS)
+    const alarms: number[] = []
+
+    if (this.hasNoConnectedPlayers()) {
+      const lastDisconnectedAt = this.getLastDisconnectedAt()
+      if (lastDisconnectedAt !== null) {
+        alarms.push(lastDisconnectedAt + EMPTY_ROOM_GRACE_MS)
+      }
+    }
+
+    if (this.room.status === 'playing' && !this.room.winner) {
+      ;(['A', 'B'] as const)
+        .map((seat) => this.room?.players[seat]?.disconnectedAt)
+        .filter((value): value is number => typeof value === 'number')
+        .forEach((disconnectedAt) => {
+          alarms.push(disconnectedAt + DISCONNECT_TIMEOUT_MS)
+        })
+    }
 
     if (alarms.length === 0) {
       await this.ctx.storage.deleteAlarm()
@@ -642,5 +745,21 @@ export class GameRoom extends DurableObject {
     }
 
     await this.ctx.storage.setAlarm(Math.min(...alarms))
+  }
+
+  private getLastDisconnectedAt(): number | null {
+    if (!this.room) {
+      return null
+    }
+
+    const disconnectedAtList = (['A', 'B'] as const)
+      .map((seat) => this.room?.players[seat]?.disconnectedAt)
+      .filter((value): value is number => typeof value === 'number')
+
+    if (disconnectedAtList.length === 0) {
+      return null
+    }
+
+    return Math.max(...disconnectedAtList)
   }
 }
