@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url'
 import express, { type Request, type Response } from 'express'
 import cors from 'cors'
 import { Server } from 'socket.io'
+import { EMOJI_LIST } from '../../shared/emojis.js'
 import type { ClientToServerEvents, ServerToClientEvents } from '../../shared/protocol.js'
 import { RoomManager } from './rooms.js'
 
@@ -48,8 +49,8 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
 })
 
 const rooms = new RoomManager()
-const ALLOWED_EMOJIS = ['🎉', '🔥', '😎', '👏', '😅', '👀']
 const MAX_CHAT_LENGTH = 120
+const isAllowedEmoji = (value: string): boolean => EMOJI_LIST.some((emoji) => emoji === value)
 
 setInterval(() => {
   const updates = rooms.checkTimeouts()
@@ -120,7 +121,7 @@ io.on('connection', (socket) => {
       socket.emit('room:error', { message: '玩家未在房间内' })
       return
     }
-    if (!ALLOWED_EMOJIS.includes(emoji)) {
+    if (!isAllowedEmoji(emoji)) {
       socket.emit('room:error', { message: '非法表情' })
       return
     }

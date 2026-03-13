@@ -3,9 +3,8 @@
   "private": true,
   "scripts": {
     "install:all": "npm --prefix client install --no-audit --no-fund && npm --prefix server install --no-audit --no-fund",
-    "postinstall": "npm run install:all",
     "dev": "concurrently -n server,client \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
-    "build": "npm run install:all && npm --prefix client run build && npm --prefix server run build",
+    "build": "npm --prefix client run build && npm --prefix server run build",
     "start": "npm --prefix server run start"
   },
   "devDependencies": {

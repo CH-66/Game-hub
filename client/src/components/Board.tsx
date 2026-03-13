@@ -1,6 +1,15 @@
 import { useMemo } from 'react'
-import type { Cube, PieceMap } from '../rules/types'
+import type { CSSProperties } from 'react'
+import type { Cube, PieceMap, PlayerId } from '../rules/types'
 import { cubeToAxial, posKey } from '../rules/board'
+
+export type RecentMoveAnimation = {
+  id: string
+  from: string
+  to: string
+  player: PlayerId
+  isJump: boolean
+}
 
 type BoardCell = {
   key: string
@@ -16,6 +25,7 @@ type BoardProps = {
   homeCells?: Set<string>
   highlightHome?: boolean
   orientation?: 'normal' | 'flipped'
+  recentMove?: RecentMoveAnimation | null
   onCellClick: (key: string) => void
 }
 
@@ -30,6 +40,7 @@ const Board = ({
   homeCells,
   highlightHome = false,
   orientation = 'normal',
+  recentMove,
   onCellClick,
 }: BoardProps) => {
   const layout = useMemo(() => {
@@ -60,12 +71,37 @@ const Board = ({
 
     return {
       cells,
+      cellMap: new Map(cells.map((cell) => [cell.key, cell])),
       minX,
       minY,
       width,
       height,
     }
   }, [positions])
+
+  const moveOverlay = useMemo(() => {
+    if (!recentMove) {
+      return null
+    }
+
+    const fromCell = layout.cellMap.get(recentMove.from)
+    const toCell = layout.cellMap.get(recentMove.to)
+    if (!fromCell || !toCell) {
+      return null
+    }
+
+    return {
+      id: recentMove.id,
+      player: recentMove.player,
+      isJump: recentMove.isJump,
+      style: {
+        left: fromCell.x - layout.minX + PADDING,
+        top: fromCell.y - layout.minY + PADDING,
+        '--move-x': `${toCell.x - fromCell.x}px`,
+        '--move-y': `${toCell.y - fromCell.y}px`,
+      } as CSSProperties,
+    }
+  }, [layout.cellMap, layout.minX, layout.minY, recentMove])
 
   return (
     <div
@@ -91,6 +127,7 @@ const Board = ({
         const owner = pieces[cell.key]
         const isSelected = selected === cell.key
         const isMove = validMoves.has(cell.key)
+        const isAnimatingTarget = recentMove?.to === cell.key && recentMove.player === owner
         const className = [
           'cell',
           owner ? 'occupied' : '',
@@ -98,6 +135,7 @@ const Board = ({
           owner === 'B' ? 'player-b' : '',
           isSelected ? 'selected' : '',
           isMove ? 'move' : '',
+          isAnimatingTarget ? 'arriving' : '',
         ]
           .filter(Boolean)
           .join(' ')
@@ -117,6 +155,16 @@ const Board = ({
           </button>
         )
       })}
+      {moveOverlay && (
+        <div
+          key={moveOverlay.id}
+          className={`move-overlay ${moveOverlay.player === 'A' ? 'player-a' : 'player-b'} ${moveOverlay.isJump ? 'jump' : 'step'}`}
+          style={moveOverlay.style}
+          aria-hidden="true"
+        >
+          <span className="cell-dot" />
+        </div>
+      )}
     </div>
   )
 }
