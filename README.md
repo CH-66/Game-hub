@@ -1,6 +1,6 @@
-# 跳跳棋在线对战项目
+# Game-hub
 
-本仓库包含客户端与服务端，支持 2 人在线对战，后续可扩展 4/6 人。
+Game-hub 是一个跳跳棋在线对战项目，当前包含客户端与服务端，支持 2 人在线对战，后续可扩展 4/6 人。
 
 ## 目录结构
 
@@ -53,6 +53,12 @@ npm run dev
 VITE_SERVER_URL=http://localhost:4000
 ```
 
+## Git 协作流程
+
+- 涉及新功能时，先从主分支拉出新分支开发
+- 功能完成后先本地测试通过，再通过 PR 合并
+- 避免直接在 `main` 上开发新功能
+
 ## 生产构建
 
 ```bash
@@ -79,8 +85,8 @@ docker compose up -d --build
 或使用原生 Docker：
 
 ```bash
-docker build -t tiaotiaoqi:latest .
-docker run -d --name tiaotiaoqi -p 4000:4000 tiaotiaoqi:latest
+docker build -t game-hub:latest .
+docker run -d --name game-hub -p 4000:4000 game-hub:latest
 ```
 
 启动后可直接通过 `http://localhost:4000` 访问前端，健康检查地址为 `http://localhost:4000/health`。
