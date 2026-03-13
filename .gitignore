@@ -7,3 +7,7 @@ coverage/
 *.log
 *.tsbuildinfo
 .npm-cache
+environments
+.codex
+output
+.wrangler

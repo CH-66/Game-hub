@@ -1,12 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { io, type Socket } from 'socket.io-client'
-import type {
-  ClientToServerEvents,
-  ServerToClientEvents,
-  RoomState,
-  EmojiPayload,
-  ChatPayload,
-} from '@shared/protocol'
+import { useEffect, useRef, useState } from 'react'
+import type { ChatPayload, EmojiPayload, RoomJoinedPayload, RoomState, ServerEvent } from '@shared/protocol'
 import type { PlayerId } from '@shared/types'
 
 type UseGameSocket = {
@@ -28,15 +21,24 @@ type UseGameSocket = {
   reconnect: () => void
 }
 
+type Session = {
+  roomId: string
+  token: string
+}
+
+type ApiError = {
+  message: string
+}
+
 const STORAGE_KEY = 'cc_session'
 
-const readSession = (): { roomId: string; token: string } | null => {
+const readSession = (): Session | null => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) {
       return null
     }
-    const parsed = JSON.parse(raw) as { roomId?: string; token?: string }
+    const parsed = JSON.parse(raw) as Partial<Session>
     if (!parsed.roomId || !parsed.token) {
       return null
     }
@@ -54,6 +56,17 @@ const clearSession = () => {
   localStorage.removeItem(STORAGE_KEY)
 }
 
+const getHttpBaseUrl = (value: string): URL => new URL(value, window.location.origin)
+
+const getWsBaseUrl = (value: string): URL => {
+  const url = getHttpBaseUrl(value)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  return url
+}
+
+const isApiError = (value: unknown): value is ApiError =>
+  typeof value === 'object' && value !== null && 'message' in value && typeof value.message === 'string'
+
 export const useGameSocket = (url: string): UseGameSocket => {
   const [roomState, setRoomState] = useState<RoomState | null>(null)
   const [seat, setSeat] = useState<PlayerId | null>(null)
@@ -62,111 +75,285 @@ export const useGameSocket = (url: string): UseGameSocket => {
   const [hasSession, setHasSession] = useState(() => Boolean(readSession()))
   const [emojiFeed, setEmojiFeed] = useState<Array<EmojiPayload & { localId: string }>>([])
   const [chatFeed, setChatFeed] = useState<ChatPayload[]>([])
-  const emojiCounterRef = useRef(0)
 
-  const socket: Socket<ServerToClientEvents, ClientToServerEvents> = useMemo(
-    () => io(url, { autoConnect: false }),
-    [url],
-  )
+  const socketRef = useRef<WebSocket | null>(null)
+  const emojiCounterRef = useRef(0)
+  const httpBaseUrlRef = useRef(getHttpBaseUrl(url))
+  const wsBaseUrlRef = useRef(getWsBaseUrl(url))
 
   useEffect(() => {
-    const handleConnect = () => setConnected(true)
-    const handleDisconnect = () => setConnected(false)
-    const handleRoomState = (state: RoomState) => {
-      setRoomState(state)
-    }
-    const handleRoomJoined = (payload: { roomId: string; seat: PlayerId; token: string }) => {
-      setSeat(payload.seat)
-      writeSession(payload.roomId, payload.token)
-      setHasSession(true)
-    }
-    const handleRoomError = (payload: { message: string }) => {
-      setError(payload.message)
-    }
-    const handleEmoji = (payload: EmojiPayload) => {
-      emojiCounterRef.current += 1
-      const localPayload = { ...payload, localId: `emoji-${payload.at}-${emojiCounterRef.current}` }
-      setEmojiFeed((prev) => {
-        const next = [localPayload, ...prev]
-        return next.slice(0, 6)
-      })
-      setChatFeed((prev) => {
-        const next = [...prev, { roomId: payload.roomId, message: payload.emoji, from: payload.from, at: payload.at }]
-        return next.slice(-100)
-      })
-    }
-    const handleChat = (payload: ChatPayload) => {
-      setChatFeed((prev) => {
-        const next = [...prev, payload]
-        return next.slice(-100)
-      })
-    }
+    httpBaseUrlRef.current = getHttpBaseUrl(url)
+    wsBaseUrlRef.current = getWsBaseUrl(url)
+  }, [url])
 
-    socket.connect()
-    socket.on('connect', handleConnect)
-    socket.on('disconnect', handleDisconnect)
-    socket.on('room:state', handleRoomState)
-    socket.on('room:joined', handleRoomJoined)
-    socket.on('room:error', handleRoomError)
-    socket.on('emoji:receive', handleEmoji)
-    socket.on('chat:receive', handleChat)
-
+  useEffect(() => {
     return () => {
-      socket.off('connect', handleConnect)
-      socket.off('disconnect', handleDisconnect)
-      socket.off('room:state', handleRoomState)
-      socket.off('room:joined', handleRoomJoined)
-      socket.off('room:error', handleRoomError)
-      socket.off('emoji:receive', handleEmoji)
-      socket.off('chat:receive', handleChat)
-      socket.disconnect()
+      socketRef.current?.close(1000, 'Component unmounted.')
+      socketRef.current = null
     }
-  }, [socket])
+  }, [])
+
+  const requestJson = async <TResponse>(pathname: string, payload?: unknown): Promise<TResponse> => {
+    const requestUrl = new URL(pathname, httpBaseUrlRef.current)
+    const response = await fetch(requestUrl, {
+      method: payload ? 'POST' : 'GET',
+      headers: payload
+        ? {
+            'content-type': 'application/json',
+          }
+        : undefined,
+      body: payload ? JSON.stringify(payload) : undefined,
+    })
+
+    if (response.status === 204) {
+      return undefined as TResponse
+    }
+
+    const json = (await response.json().catch(() => null)) as TResponse | ApiError | null
+    if (!response.ok) {
+      throw new Error(isApiError(json) ? json.message : 'Request failed.')
+    }
+    return json as TResponse
+  }
+
+  const refreshRoomState = (roomId: string) => {
+    void requestJson<RoomState>(`/api/rooms/${roomId}`)
+      .then((state) => {
+        setRoomState(state)
+      })
+      .catch((requestError: unknown) => {
+        setError(
+          requestError instanceof Error ? requestError.message : 'Failed to load room state.',
+        )
+      })
+  }
+
+  const setRoomSession = (payload: RoomJoinedPayload) => {
+    setSeat(payload.seat)
+    writeSession(payload.roomId, payload.token)
+    setHasSession(true)
+  }
+
+  const resetFeeds = () => {
+    setEmojiFeed([])
+    setChatFeed([])
+  }
+
+  const handleServerEvent = (event: ServerEvent) => {
+    switch (event.type) {
+      case 'room:state':
+        setRoomState(event.payload)
+        break
+      case 'room:error':
+        setError(event.payload.message)
+        break
+      case 'emoji:receive':
+        emojiCounterRef.current += 1
+        setEmojiFeed((previous) => {
+          const next = [
+            {
+              ...event.payload,
+              localId: `emoji-${event.payload.at}-${emojiCounterRef.current}`,
+            },
+            ...previous,
+          ]
+          return next.slice(0, 6)
+        })
+        setChatFeed((previous) => {
+          const next = [
+            ...previous,
+            {
+              roomId: event.payload.roomId,
+              message: event.payload.emoji,
+              from: event.payload.from,
+              at: event.payload.at,
+            },
+          ]
+          return next.slice(-100)
+        })
+        break
+      case 'chat:receive':
+        setChatFeed((previous) => {
+          const next = [...previous, event.payload]
+          return next.slice(-100)
+        })
+        break
+    }
+  }
+
+  const connectSocket = (roomId: string, token: string) => {
+    socketRef.current?.close(1000, 'Opening a new room connection.')
+
+    const wsUrl = new URL(`/ws/${roomId}`, wsBaseUrlRef.current)
+    wsUrl.searchParams.set('token', token)
+
+    const socket = new WebSocket(wsUrl.toString())
+    socketRef.current = socket
+    setConnected(false)
+
+    socket.addEventListener('open', () => {
+      if (socketRef.current === socket) {
+        setConnected(true)
+        refreshRoomState(roomId)
+      }
+    })
+
+    socket.addEventListener('close', () => {
+      if (socketRef.current === socket) {
+        setConnected(false)
+      }
+    })
+
+    socket.addEventListener('error', () => {
+      if (socketRef.current === socket) {
+        setConnected(false)
+        setError('WebSocket connection failed.')
+      }
+    })
+
+    socket.addEventListener('message', (messageEvent) => {
+      try {
+        const parsed = JSON.parse(String(messageEvent.data)) as ServerEvent
+        handleServerEvent(parsed)
+      } catch {
+        setError('Received an invalid realtime event.')
+      }
+    })
+  }
+
+  const withSession = async <TResult>(
+    roomId: string,
+    factory: (session: Session) => Promise<TResult>,
+  ): Promise<TResult | null> => {
+    const session = readSession()
+    if (!session || session.roomId !== roomId) {
+      setError('Missing room session.')
+      return null
+    }
+    return factory(session)
+  }
+
+  const createRoom = () => {
+    setError(null)
+    void requestJson<RoomJoinedPayload>('/api/rooms', {})
+      .then((payload) => {
+        resetFeeds()
+        setRoomSession(payload)
+        connectSocket(payload.roomId, payload.token)
+      })
+      .catch((requestError: unknown) => {
+        setError(requestError instanceof Error ? requestError.message : 'Failed to create room.')
+      })
+  }
+
+  const joinRoom = (roomId: string) => {
+    setError(null)
+    void requestJson<RoomJoinedPayload>(`/api/rooms/${roomId}/join`, { roomId })
+      .then((payload) => {
+        resetFeeds()
+        setRoomSession(payload)
+        connectSocket(payload.roomId, payload.token)
+      })
+      .catch((requestError: unknown) => {
+        setError(requestError instanceof Error ? requestError.message : 'Failed to join room.')
+      })
+  }
 
   const reconnect = () => {
     const session = readSession()
     if (!session) {
       return
     }
-    socket.emit('room:reconnect', session)
-  }
 
-  const createRoom = () => {
     setError(null)
-    socket.emit('room:create')
-  }
-
-  const joinRoom = (roomId: string) => {
-    setError(null)
-    socket.emit('room:join', { roomId })
+    void requestJson<RoomJoinedPayload>(`/api/rooms/${session.roomId}/reconnect`, session)
+      .then((payload) => {
+        setRoomSession(payload)
+        connectSocket(payload.roomId, payload.token)
+      })
+      .catch((requestError: unknown) => {
+        setError(requestError instanceof Error ? requestError.message : 'Failed to reconnect.')
+      })
   }
 
   const leaveRoom = (roomId: string) => {
-    socket.emit('room:leave', { roomId })
-    setRoomState(null)
-    setSeat(null)
-    clearSession()
-    setHasSession(false)
+    setError(null)
+    void withSession(roomId, async (session) => {
+      await requestJson(`/api/rooms/${roomId}/leave`, session)
+      socketRef.current?.close(1000, 'Left room.')
+      socketRef.current = null
+      setConnected(false)
+      setRoomState(null)
+      setSeat(null)
+      resetFeeds()
+      clearSession()
+      setHasSession(false)
+    }).catch((requestError: unknown) => {
+      setError(requestError instanceof Error ? requestError.message : 'Failed to leave room.')
+    })
   }
 
   const setReady = (roomId: string, ready: boolean) => {
-    socket.emit('room:ready', { roomId, ready })
+    setError(null)
+    void withSession(roomId, (session) =>
+      requestJson<RoomState>(`/api/rooms/${roomId}/ready`, { ...session, ready, roomId }),
+    )
+      .then((state) => {
+        if (state) {
+          setRoomState(state)
+        }
+      })
+      .catch((requestError: unknown) => {
+        setError(requestError instanceof Error ? requestError.message : 'Failed to update ready state.')
+      })
   }
 
   const sendMove = (roomId: string, from: string, to: string) => {
-    socket.emit('move:intent', { roomId, from, to })
+    setError(null)
+    void withSession(roomId, (session) =>
+      requestJson<RoomState>(`/api/rooms/${roomId}/move`, { ...session, roomId, from, to }),
+    )
+      .then((state) => {
+        if (state) {
+          setRoomState(state)
+        }
+      })
+      .catch((requestError: unknown) => {
+        setError(requestError instanceof Error ? requestError.message : 'Failed to submit move.')
+      })
   }
 
   const sendEmoji = (roomId: string, emoji: string) => {
-    socket.emit('emoji:send', { roomId, emoji })
+    setError(null)
+    void withSession(roomId, (session) =>
+      requestJson(`/api/rooms/${roomId}/emoji`, { ...session, roomId, emoji }),
+    ).catch((requestError: unknown) => {
+      setError(requestError instanceof Error ? requestError.message : 'Failed to send emoji.')
+    })
   }
 
   const sendChat = (roomId: string, message: string) => {
-    socket.emit('chat:send', { roomId, message })
+    setError(null)
+    void withSession(roomId, (session) =>
+      requestJson(`/api/rooms/${roomId}/chat`, { ...session, roomId, message }),
+    ).catch((requestError: unknown) => {
+      setError(requestError instanceof Error ? requestError.message : 'Failed to send chat.')
+    })
   }
 
   const restartRoom = (roomId: string) => {
-    socket.emit('room:restart', { roomId })
+    setError(null)
+    void withSession(roomId, (session) =>
+      requestJson<RoomState>(`/api/rooms/${roomId}/restart`, { ...session, roomId }),
+    )
+      .then((state) => {
+        if (state) {
+          setRoomState(state)
+        }
+      })
+      .catch((requestError: unknown) => {
+        setError(requestError instanceof Error ? requestError.message : 'Failed to restart room.')
+      })
   }
 
   return {
