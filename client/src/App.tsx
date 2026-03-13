@@ -72,6 +72,8 @@ function App() {
   const [emojiCooldownUntil, setEmojiCooldownUntil] = useState(0)
   const [chatCooldownUntil, setChatCooldownUntil] = useState(0)
   const [recentMove, setRecentMove] = useState<RecentMoveAnimation | null>(null)
+  const [isRecreatingRoom, setIsRecreatingRoom] = useState(false)
+  const [copiedRoomId, setCopiedRoomId] = useState<string | null>(null)
   const [barrageItems, setBarrageItems] = useState<
     Array<{ id: string; emoji: string; from: PlayerId }>
   >([])
@@ -93,6 +95,7 @@ function App() {
     emojiFeed,
     chatFeed,
     createRoom,
+    recreateRoom,
     joinRoom,
     leaveRoom,
     setReady,
@@ -334,6 +337,30 @@ function App() {
     setChatInput('')
   }
 
+  const handleRecreateRoom = () => {
+    if (!roomState || isRecreatingRoom) {
+      return
+    }
+
+    setIsRecreatingRoom(true)
+    recreateRoom(roomState.roomId)
+    window.setTimeout(() => {
+      setIsRecreatingRoom(false)
+    }, 1200)
+  }
+
+  const handleCopyRoomId = async (roomId: string) => {
+    try {
+      await navigator.clipboard.writeText(roomId)
+      setCopiedRoomId(roomId)
+      window.setTimeout(() => {
+        setCopiedRoomId((current) => (current === roomId ? null : current))
+      }, 1200)
+    } catch {
+      // Ignore clipboard failures silently and keep the UI usable.
+    }
+  }
+
   const canSendEmoji = Date.now() >= emojiCooldownUntil
   const canSendChat = Date.now() >= chatCooldownUntil && chatInput.trim().length > 0
 
@@ -352,7 +379,18 @@ function App() {
             {roomState && (
               <>
                 <p className="status-label">房间号</p>
-                <p className="status-player">{roomState.roomId}</p>
+                <div className="room-id-row">
+                  <p className="status-player">{roomState.roomId}</p>
+                  <button
+                    type="button"
+                    className="copy-btn"
+                    onClick={() => handleCopyRoomId(roomState.roomId)}
+                    aria-label="复制房间号"
+                    title={copiedRoomId === roomState.roomId ? '已复制' : '复制房间号'}
+                  >
+                    {copiedRoomId === roomState.roomId ? '✓' : '⧉'}
+                  </button>
+                </div>
                 <p className="status-label">你的座位</p>
                 <p className={`status-player ${seat === 'A' ? 'player-a' : 'player-b'}`}>
                   {seat === 'A' ? '红方' : '蓝方'}
@@ -388,7 +426,18 @@ function App() {
                       ? ` · 胜者 ${roomState.winner === 'A' ? '红方' : '蓝方'}`
                       : ''}
                   </p>
-                  <p className="room-id">房间号：{roomState.roomId}</p>
+                  <div className="room-id room-id-row">
+                    <span>房间号：{roomState.roomId}</span>
+                    <button
+                      type="button"
+                      className="copy-btn"
+                      onClick={() => handleCopyRoomId(roomState.roomId)}
+                      aria-label="复制房间号"
+                      title={copiedRoomId === roomState.roomId ? '已复制' : '复制房间号'}
+                    >
+                      {copiedRoomId === roomState.roomId ? '✓' : '⧉'}
+                    </button>
+                  </div>
                 </div>
                 <div className="turn-pill">
                   当前回合：
@@ -466,6 +515,14 @@ function App() {
               <div className="toast-card">
                 <p className="toast-title">对手已掉线</p>
                 <p className="toast-body">等待重连…</p>
+                <button
+                  type="button"
+                  className="toast-action"
+                  onClick={handleRecreateRoom}
+                  disabled={isRecreatingRoom}
+                >
+                  {isRecreatingRoom ? '正在创建新房间…' : '重新创建房间'}
+                </button>
               </div>
             </div>
           )}

@@ -26,6 +26,8 @@
 
 - Worker 负责 HTTP 路由与静态资源入口
 - 每个房间通过 `ROOMS` Durable Object 命名实例隔离
+- 首次创建房间时，Worker 会使用 `locationHint: "apac"` 请求 Cloudflare 优先将房间对象放在亚太区域
+- 房间 WebSocket 已切换到 Durable Object WebSocket Hibernation 模式，避免普通 accept WebSocket 长时间占用 duration
 - 玩家操作通过 HTTP API 提交：
   - `POST /api/rooms`
   - `POST /api/rooms/:roomId/join`
@@ -43,6 +45,7 @@
 - Durable Object 是单房间的唯一可信状态源
 - 棋盘初始化、走子合法性、胜负判定复用现有规则模块
 - 断线超时由 Durable Object Alarm 调度
+- 为了兼顾“同时刷新可重连”和 Free 计划资源控制，房间在最后一个在线玩家断开后只保留约 30 秒缓冲窗口，超时后自动删除房间状态与告警
 
 ## 配置文件
 
@@ -95,6 +98,7 @@ npm run deploy:cloudflare
 - 若需要排行榜或战绩，可再增加 D1
 - 若需要图片、录像、棋谱回放文件，可再增加 R2
 - 生产环境建议在 `wrangler.jsonc` 中继续细化 `workers_dev`、自定义域名和预览环境策略
+- 保持“空房间立即清理”的策略，避免 Durable Object 状态和定时告警累积，超出 Free 计划的资源预算
 
 ## Todo List
 

@@ -11,6 +11,7 @@ type UseGameSocket = {
   emojiFeed: Array<EmojiPayload & { localId: string }>
   chatFeed: ChatPayload[]
   createRoom: () => void
+  recreateRoom: (roomId: string) => void
   joinRoom: (roomId: string) => void
   leaveRoom: (roomId: string) => void
   setReady: (roomId: string, ready: boolean) => void
@@ -246,6 +247,30 @@ export const useGameSocket = (url: string): UseGameSocket => {
       })
   }
 
+  const recreateRoom = (roomId: string) => {
+    setError(null)
+    void withSession(roomId, async (session) => {
+      await requestJson(`/api/rooms/${roomId}/leave`, session)
+      socketRef.current?.close(1000, 'Recreating room.')
+      socketRef.current = null
+      setConnected(false)
+      setRoomState(null)
+      setSeat(null)
+      resetFeeds()
+      clearSession()
+      setHasSession(false)
+
+      const payload = await requestJson<RoomJoinedPayload>('/api/rooms', {})
+      resetFeeds()
+      setRoomSession(payload)
+      connectSocket(payload.roomId, payload.token)
+    }).catch((requestError: unknown) => {
+      setError(
+        requestError instanceof Error ? requestError.message : 'Failed to recreate room.',
+      )
+    })
+  }
+
   const joinRoom = (roomId: string) => {
     setError(null)
     void requestJson<RoomJoinedPayload>(`/api/rooms/${roomId}/join`, { roomId })
@@ -365,6 +390,7 @@ export const useGameSocket = (url: string): UseGameSocket => {
     emojiFeed,
     chatFeed,
     createRoom,
+    recreateRoom,
     joinRoom,
     leaveRoom,
     setReady,

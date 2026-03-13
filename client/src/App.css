@@ -64,6 +64,33 @@
   margin: 4px 0;
 }
 
+.room-id-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.copy-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #f6f2ea;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.copy-btn:hover {
+  border-color: rgba(242, 178, 76, 0.55);
+  background: rgba(242, 178, 76, 0.14);
+}
+
 .reset-btn {
   margin-top: 12px;
   padding: 8px 16px;
@@ -590,6 +617,22 @@
 .toast-body {
   margin: 0;
   color: rgba(255, 255, 255, 0.7);
+}
+
+.toast-action {
+  margin-top: 14px;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 999px;
+  background: #f2b24c;
+  color: #1a1208;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.toast-action:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 @keyframes toastFloat {

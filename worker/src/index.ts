@@ -5,6 +5,8 @@ type Env = {
   ROOMS: DurableObjectNamespace<GameRoom>
 }
 
+type LocationHint = 'wnam' | 'enam' | 'sam' | 'weur' | 'eeur' | 'apac' | 'oc' | 'afr' | 'me'
+
 const ROOM_ID_PATTERN = /^[A-Z0-9]{6}$/
 
 const json = (payload: unknown, init?: ResponseInit): Response =>
@@ -16,9 +18,13 @@ const createRoomId = (): string =>
     .slice(2, 8)
     .toUpperCase()
 
-const getRoomStub = (env: Env, roomId: string): DurableObjectStub<GameRoom> => {
+const getRoomStub = (
+  env: Env,
+  roomId: string,
+  options?: { locationHint?: LocationHint },
+): DurableObjectStub<GameRoom> => {
   const durableObjectId = env.ROOMS.idFromName(roomId)
-  return env.ROOMS.get(durableObjectId)
+  return env.ROOMS.get(durableObjectId, options)
 }
 
 const forwardToRoom = (
@@ -27,8 +33,9 @@ const forwardToRoom = (
   request: Request,
   pathname: string,
   init?: RequestInit,
+  stubOptions?: { locationHint?: LocationHint },
 ): Promise<Response> => {
-  const stub = getRoomStub(env, roomId)
+  const stub = getRoomStub(env, roomId, stubOptions)
   const normalizedPath = pathname.startsWith('/') ? pathname.slice(1) : pathname
   const forwardedRequest = new Request(`https://room/${normalizedPath}`, init ?? request)
   return stub.fetch(forwardedRequest)
@@ -52,7 +59,7 @@ export default {
           headers: {
             'x-room-id': roomId,
           },
-        })
+        }, { locationHint: 'apac' })
 
         if (response.ok) {
           return response
