@@ -1,5 +1,5 @@
 {
-  "name": "chinese-checkers-monorepo",
+  "name": "game-hub",
   "private": true,
   "scripts": {
     "install:all": "npm --prefix client install --no-audit --no-fund && npm --prefix server install --no-audit --no-fund",

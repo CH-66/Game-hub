@@ -178,8 +178,8 @@ function App() {
     <div className="app">
       <header className="app-header">
         <div>
-          <p className="eyebrow">Chinese Checkers Online</p>
-          <h1>跳跳棋 · 在线对战原型</h1>
+          <p className="eyebrow">Game-hub</p>
+          <h1>跳跳棋 · 在线对战</h1>
           <p className="subtitle">仅在线房间对战，后续可扩展 4/6 人。</p>
         </div>
         <div className="header-side">

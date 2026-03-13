@@ -1,10 +1,10 @@
 services:
-  tiaotiaoqi:
+  game-hub:
     build:
       context: .
       dockerfile: Dockerfile
-    image: tiaotiaoqi:latest
-    container_name: tiaotiaoqi
+    image: game-hub:latest
+    container_name: game-hub
     ports:
       - "${PORT:-4000}:4000"
     environment:

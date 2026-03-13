@@ -29,17 +29,17 @@
 ### 1. 构建镜像
 
 ```bash
-docker build -t tiaotiaoqi:latest .
+docker build -t game-hub:latest .
 ```
 
 ### 2. 启动容器
 
 ```bash
 docker run -d \
-  --name tiaotiaoqi \
+  --name game-hub \
   -p 4000:4000 \
   --restart unless-stopped \
-  tiaotiaoqi:latest
+  game-hub:latest
 ```
 
 ### 3. 验证服务
@@ -96,13 +96,13 @@ docker compose up -d --build
 如果使用原生 Docker：
 
 ```bash
-docker build -t tiaotiaoqi:latest .
-docker rm -f tiaotiaoqi
+docker build -t game-hub:latest .
+docker rm -f game-hub
 docker run -d \
-  --name tiaotiaoqi \
+  --name game-hub \
   -p 4000:4000 \
   --restart unless-stopped \
-  tiaotiaoqi:latest
+  game-hub:latest
 ```
 
 ## 常见问题
@@ -124,7 +124,7 @@ docker run -d \
 检查：
 
 ```bash
-docker logs tiaotiaoqi
+docker logs game-hub
 curl http://127.0.0.1:4000/health
 ```
 
