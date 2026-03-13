@@ -1,4 +1,5 @@
 import http from 'http'
+import { existsSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import express, { type Request, type Response } from 'express'
@@ -18,11 +19,25 @@ app.get('/health', (_req: Request, res: Response) => {
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const clientDist = path.resolve(__dirname, '../../client/dist')
-app.use(express.static(clientDist))
-app.get('*', (_req: Request, res: Response) => {
-  res.sendFile(path.join(clientDist, 'index.html'))
-})
+const clientDistCandidates = [
+  path.resolve(process.cwd(), 'client/dist'),
+  path.resolve(process.cwd(), '../client/dist'),
+  path.resolve(__dirname, '../../../../client/dist'),
+  path.resolve(__dirname, '../../client/dist'),
+]
+const clientDist = clientDistCandidates.find((candidate) => existsSync(candidate))
+
+if (clientDist) {
+  app.use(express.static(clientDist))
+  app.get('*', (_req: Request, res: Response) => {
+    res.sendFile(path.join(clientDist, 'index.html'))
+  })
+} else {
+  // Keep the API server bootable even if frontend assets were not built yet.
+  app.get('*', (_req: Request, res: Response) => {
+    res.status(503).json({ message: 'client build not found' })
+  })
+}
 
 const server = http.createServer(app)
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {

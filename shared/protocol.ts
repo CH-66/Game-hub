@@ -1,4 +1,4 @@
-import type { PieceMap, PlayerId } from './types'
+import type { PieceMap, PlayerId } from './types.js'
 
 export type RoomStatus = 'waiting' | 'playing' | 'finished'
 

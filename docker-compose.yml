@@ -1,0 +1,13 @@
+services:
+  tiaotiaoqi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tiaotiaoqi:latest
+    container_name: tiaotiaoqi
+    ports:
+      - "${PORT:-4000}:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+    restart: unless-stopped

@@ -66,14 +66,24 @@ npm start
 
 ## Docker
 
-构建并运行：
+推荐直接阅读部署文档：
+
+- [Docker 部署说明](./doc/docker-deployment.md)
+
+快速启动：
 
 ```bash
-docker build -t chinese-checkers .
-docker run -p 4000:4000 chinese-checkers
+docker compose up -d --build
 ```
 
-镜像启动后可直接通过 `http://localhost:4000` 访问前端。
+或使用原生 Docker：
+
+```bash
+docker build -t tiaotiaoqi:latest .
+docker run -d --name tiaotiaoqi -p 4000:4000 tiaotiaoqi:latest
+```
+
+启动后可直接通过 `http://localhost:4000` 访问前端，健康检查地址为 `http://localhost:4000/health`。
 
 ## 说明
 

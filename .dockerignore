@@ -1,7 +1,11 @@
 **/node_modules
 **/dist
+**/*.tsbuildinfo
 **/.git
 **/.gitignore
 **/npm-debug.log
+.npm-cache
+.github
+doc
 .env
 .env.local
