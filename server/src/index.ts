@@ -50,7 +50,11 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
 
 const rooms = new RoomManager()
 const MAX_CHAT_LENGTH = 120
+const EMOJI_COOLDOWN_MS = 1200
+const CHAT_COOLDOWN_MS = 900
 const isAllowedEmoji = (value: string): boolean => EMOJI_LIST.some((emoji) => emoji === value)
+const lastEmojiAtBySocket = new Map<string, number>()
+const lastChatAtBySocket = new Map<string, number>()
 
 setInterval(() => {
   const updates = rooms.checkTimeouts()
@@ -125,7 +129,14 @@ io.on('connection', (socket) => {
       socket.emit('room:error', { message: '非法表情' })
       return
     }
-    io.to(roomId).emit('emoji:receive', { roomId, emoji, from: seat, at: Date.now() })
+    const now = Date.now()
+    const lastEmojiAt = lastEmojiAtBySocket.get(socket.id) ?? 0
+    if (now - lastEmojiAt < EMOJI_COOLDOWN_MS) {
+      socket.emit('room:error', { message: '表情发送过于频繁' })
+      return
+    }
+    lastEmojiAtBySocket.set(socket.id, now)
+    io.to(roomId).emit('emoji:receive', { roomId, emoji, from: seat, at: now })
   })
 
   socket.on('chat:send', ({ roomId, message }) => {
@@ -138,11 +149,18 @@ io.on('connection', (socket) => {
     if (!text) {
       return
     }
+    const now = Date.now()
+    const lastChatAt = lastChatAtBySocket.get(socket.id) ?? 0
+    if (now - lastChatAt < CHAT_COOLDOWN_MS) {
+      socket.emit('room:error', { message: '消息发送过于频繁' })
+      return
+    }
     if (text.length > MAX_CHAT_LENGTH) {
       socket.emit('room:error', { message: '消息过长' })
       return
     }
-    io.to(roomId).emit('chat:receive', { roomId, message: text, from: seat, at: Date.now() })
+    lastChatAtBySocket.set(socket.id, now)
+    io.to(roomId).emit('chat:receive', { roomId, message: text, from: seat, at: now })
   })
 
   socket.on('room:restart', ({ roomId }) => {
@@ -164,6 +182,8 @@ io.on('connection', (socket) => {
   })
 
   socket.on('disconnect', () => {
+    lastEmojiAtBySocket.delete(socket.id)
+    lastChatAtBySocket.delete(socket.id)
     rooms.markDisconnected(socket.id)
     const state = rooms.getRoomStateBySocket(socket.id)
     if (state) {

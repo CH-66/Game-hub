@@ -243,12 +243,8 @@
   border-radius: 50%;
   pointer-events: none;
   transform: translate(-50%, -50%);
-  animation: moveArc 520ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   z-index: 6;
-}
-
-.move-overlay.jump {
-  animation-duration: 580ms;
+  will-change: left, top, transform;
 }
 
 .move-overlay .cell-dot {
@@ -257,16 +253,24 @@
   height: 18px;
   margin: 3px auto 0;
   border-radius: 50%;
+  transform: scale(var(--piece-scale-x, 1), var(--piece-scale-y, 1));
+  transition: transform 60ms linear;
 }
 
 .move-overlay.player-a .cell-dot {
   background: radial-gradient(circle at 30% 30%, #ffd1d1, #d94d4d 70%);
-  box-shadow: 0 16px 28px rgba(217, 77, 77, 0.45);
+  box-shadow:
+    0 calc(10px * var(--piece-shadow-strength, 1)) calc(20px * var(--piece-shadow-strength, 1))
+      rgba(217, 77, 77, 0.38),
+    inset 0 2px 4px rgba(255, 255, 255, 0.22);
 }
 
 .move-overlay.player-b .cell-dot {
   background: radial-gradient(circle at 30% 30%, #d8e7ff, #4b87f1 70%);
-  box-shadow: 0 16px 28px rgba(75, 135, 241, 0.45);
+  box-shadow:
+    0 calc(10px * var(--piece-shadow-strength, 1)) calc(20px * var(--piece-shadow-strength, 1))
+      rgba(75, 135, 241, 0.38),
+    inset 0 2px 4px rgba(255, 255, 255, 0.24);
 }
 
 @keyframes selectedBounce {
@@ -279,23 +283,6 @@
   }
   60% {
     transform: translateY(-2px) scale(0.98);
-  }
-}
-
-@keyframes moveArc {
-  0% {
-    transform: translate(-50%, -50%) translate(0, 0) scale(0.98);
-  }
-  32% {
-    transform: translate(-50%, -50%)
-      translate(calc(var(--move-x) * 0.34), calc(var(--move-y) * 0.34 - 18px)) scale(1.08);
-  }
-  70% {
-    transform: translate(-50%, -50%)
-      translate(calc(var(--move-x) * 0.78), calc(var(--move-y) * 0.78 - 8px)) scale(1.02);
-  }
-  100% {
-    transform: translate(-50%, -50%) translate(var(--move-x), var(--move-y)) scale(1);
   }
 }
 
@@ -352,6 +339,11 @@
   padding: 6px 10px;
   cursor: pointer;
   font-size: 1rem;
+}
+
+.emoji-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .emoji-feed {
