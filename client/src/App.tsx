@@ -6,17 +6,20 @@ import Board from './components/Board'
 import type { RecentMoveAnimation } from './components/Board'
 import { createBoard, keyToCube } from './rules/board'
 import type { PieceMap, PlayerId } from './rules/types'
-import { getValidMoves } from './rules/move'
+import { findJumpPath, getValidMoves } from './rules/move'
 import { useGameSocket } from './net/useGameSocket'
 import './App.css'
 
 const BOARD_SIZE = 4
 const SERVER_URL = import.meta.env.VITE_SERVER_URL?.trim() || window.location.origin
-const MOVE_ANIMATION_MS = 520
+const STEP_MOVE_ANIMATION_MS = 420
+const JUMP_SEGMENT_ANIMATION_MS = 300
+const JUMP_SEGMENT_PAUSE_MS = 110
 
 const detectRecentMove = (
   previousPieces: PieceMap,
   nextPieces: PieceMap,
+  positionSet: Set<string>,
 ): Omit<RecentMoveAnimation, 'id'> | null => {
   const removed = Object.keys(previousPieces).filter((key) => previousPieces[key] && !nextPieces[key])
   const added = Object.keys(nextPieces).filter((key) => nextPieces[key] && !previousPieces[key])
@@ -40,15 +43,25 @@ const detectRecentMove = (
     Math.abs(fromCube.z - toCube.z),
   )
 
+  const isJump = distance > 1
+  const path = isJump
+    ? findJumpPath(from, to, previousPieces, positionSet) ?? [from, to]
+    : [from, to]
+
   return {
     from,
     to,
     player,
-    isJump: distance > 1,
+    isJump,
+    path,
+    segmentDurationMs: isJump ? JUMP_SEGMENT_ANIMATION_MS : STEP_MOVE_ANIMATION_MS,
+    segmentPauseMs: isJump ? JUMP_SEGMENT_PAUSE_MS : 0,
   }
 }
 
 function App() {
+  const emojiCooldownMs = 1200
+  const chatCooldownMs = 900
   const board = useMemo(() => createBoard(BOARD_SIZE), [])
   const [roomInput, setRoomInput] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
@@ -56,6 +69,8 @@ function App() {
   const [reconnectAttempted, setReconnectAttempted] = useState(false)
   const [showTurnToast, setShowTurnToast] = useState(false)
   const [chatInput, setChatInput] = useState('')
+  const [emojiCooldownUntil, setEmojiCooldownUntil] = useState(0)
+  const [chatCooldownUntil, setChatCooldownUntil] = useState(0)
   const [recentMove, setRecentMove] = useState<RecentMoveAnimation | null>(null)
   const [barrageItems, setBarrageItems] = useState<
     Array<{ id: string; emoji: string; from: PlayerId }>
@@ -63,7 +78,9 @@ function App() {
   const prevIsOnlineTurnRef = useRef(false)
   const prevRoomStateRef = useRef<RoomState | null>(null)
   const prevWinnerRef = useRef<PlayerId | null>(null)
-  const lastEmojiAtRef = useRef<number | null>(null)
+  const processedEmojiIdsRef = useRef<Set<string>>(new Set())
+  const emojiCooldownTimerRef = useRef<number | null>(null)
+  const chatCooldownTimerRef = useRef<number | null>(null)
   const chatEndRef = useRef<HTMLDivElement | null>(null)
   const { soundEnabled, unlockAudio, playSound, toggleSound } = useGameAudio()
 
@@ -94,6 +111,9 @@ function App() {
   useEffect(() => {
     if (!roomState) {
       prevRoomStateRef.current = null
+      processedEmojiIdsRef.current.clear()
+      setEmojiCooldownUntil(0)
+      setChatCooldownUntil(0)
       setRecentMove(null)
       return
     }
@@ -104,7 +124,7 @@ function App() {
       previousState.roomId === roomState.roomId &&
       roomState.moveCount === previousState.moveCount + 1
     ) {
-      const move = detectRecentMove(previousState.pieces, roomState.pieces)
+      const move = detectRecentMove(previousState.pieces, roomState.pieces, board.positionSet)
       setRecentMove(
         move
           ? {
@@ -118,7 +138,18 @@ function App() {
     }
 
     prevRoomStateRef.current = roomState
-  }, [roomState])
+  }, [board.positionSet, roomState])
+
+  useEffect(() => {
+    return () => {
+      if (emojiCooldownTimerRef.current) {
+        window.clearTimeout(emojiCooldownTimerRef.current)
+      }
+      if (chatCooldownTimerRef.current) {
+        window.clearTimeout(chatCooldownTimerRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (!recentMove) {
@@ -126,9 +157,14 @@ function App() {
     }
 
     playSound(recentMove.isJump ? 'jump' : 'move')
+    const segmentCount = Math.max(recentMove.path.length - 1, 1)
+    const durationMs =
+      recentMove.segmentDurationMs * segmentCount +
+      recentMove.segmentPauseMs * Math.max(segmentCount - 1, 0) +
+      120
     const timer = window.setTimeout(() => {
       setRecentMove((current) => (current?.id === recentMove.id ? null : current))
-    }, MOVE_ANIMATION_MS)
+    }, durationMs)
     return () => window.clearTimeout(timer)
   }, [playSound, recentMove])
 
@@ -221,20 +257,32 @@ function App() {
     if (emojiFeed.length === 0) {
       return
     }
+    const timers: number[] = []
+    const unseenItems = [...emojiFeed]
+      .reverse()
+      .filter((item) => !processedEmojiIdsRef.current.has(item.localId))
 
-    const latest = emojiFeed[0]
-    if (lastEmojiAtRef.current === latest.at) {
+    if (unseenItems.length === 0) {
       return
     }
 
-    playSound('emoji')
-    lastEmojiAtRef.current = latest.at
-    const id = `${latest.at}-${latest.from}`
-    setBarrageItems((previous) => [...previous, { id, emoji: latest.emoji, from: latest.from }])
-    const timer = window.setTimeout(() => {
-      setBarrageItems((previous) => previous.filter((item) => item.id !== id))
-    }, 1400)
-    return () => window.clearTimeout(timer)
+    unseenItems.forEach((item) => {
+      processedEmojiIdsRef.current.add(item.localId)
+      playSound('emoji')
+      const barrageId = `barrage-${item.localId}`
+      setBarrageItems((previous) => [
+        ...previous,
+        { id: barrageId, emoji: item.emoji, from: item.from },
+      ])
+      const timer = window.setTimeout(() => {
+        setBarrageItems((previous) => previous.filter((barrageItem) => barrageItem.id !== barrageId))
+      }, 1400)
+      timers.push(timer)
+    })
+
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer))
+    }
   }, [emojiFeed, playSound])
 
   useEffect(() => {
@@ -267,13 +315,27 @@ function App() {
     if (!roomState) {
       return
     }
+    if (Date.now() < chatCooldownUntil) {
+      return
+    }
     const text = chatInput.trim()
     if (!text) {
       return
     }
+    setChatCooldownUntil(Date.now() + chatCooldownMs)
+    if (chatCooldownTimerRef.current) {
+      window.clearTimeout(chatCooldownTimerRef.current)
+    }
+    chatCooldownTimerRef.current = window.setTimeout(() => {
+      setChatCooldownUntil(0)
+      chatCooldownTimerRef.current = null
+    }, chatCooldownMs)
     sendChat(roomState.roomId, text)
     setChatInput('')
   }
+
+  const canSendEmoji = Date.now() >= emojiCooldownUntil
+  const canSendChat = Date.now() >= chatCooldownUntil && chatInput.trim().length > 0
 
   return (
     <div className="app" onPointerDown={unlockAudio} onKeyDownCapture={unlockAudio}>
@@ -467,7 +529,21 @@ function App() {
                     key={emoji}
                     type="button"
                     className="emoji-btn"
-                    onClick={() => sendEmoji(roomState.roomId, emoji)}
+                    onClick={() => {
+                      if (!canSendEmoji) {
+                        return
+                      }
+                      setEmojiCooldownUntil(Date.now() + emojiCooldownMs)
+                      if (emojiCooldownTimerRef.current) {
+                        window.clearTimeout(emojiCooldownTimerRef.current)
+                      }
+                      emojiCooldownTimerRef.current = window.setTimeout(() => {
+                        setEmojiCooldownUntil(0)
+                        emojiCooldownTimerRef.current = null
+                      }, emojiCooldownMs)
+                      sendEmoji(roomState.roomId, emoji)
+                    }}
+                    disabled={!canSendEmoji}
                   >
                     {emoji}
                   </button>
@@ -499,12 +575,17 @@ function App() {
                 placeholder="发送一条消息…"
                 maxLength={120}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
+                  if (event.key === 'Enter' && canSendChat) {
                     handleSendChat()
                   }
                 }}
               />
-              <button type="button" className="ghost-btn" onClick={handleSendChat}>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={handleSendChat}
+                disabled={!canSendChat}
+              >
                 发送
               </button>
             </div>

@@ -47,6 +47,54 @@ const collectJumpMoves = (
   return reachable
 }
 
+export const findJumpPath = (
+  originKey: string,
+  targetKey: string,
+  pieces: PieceMap,
+  positionSet: Set<string>,
+): string[] | null => {
+  const visited = new Set<string>([originKey])
+
+  const search = (currentKey: string, path: string[]): string[] | null => {
+    if (currentKey === targetKey) {
+      return path
+    }
+
+    const current = keyToCube(currentKey)
+    const isOccupied = (key: string) => {
+      if (key === originKey) {
+        return false
+      }
+      return pieces[key] !== undefined
+    }
+
+    for (const dir of DIRECTIONS) {
+      const mid = addCube(current, dir)
+      const midKey = posKey(mid)
+      if (!isOccupied(midKey)) {
+        continue
+      }
+
+      const dest = addCube(current, scaleCube(dir, 2))
+      const destKey = posKey(dest)
+      if (!positionSet.has(destKey) || isOccupied(destKey) || visited.has(destKey)) {
+        continue
+      }
+
+      visited.add(destKey)
+      const result = search(destKey, [...path, destKey])
+      if (result) {
+        return result
+      }
+      visited.delete(destKey)
+    }
+
+    return null
+  }
+
+  return search(originKey, [originKey])
+}
+
 export const getValidMoves = (
   fromKey: string,
   pieces: PieceMap,
