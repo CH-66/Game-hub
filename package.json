@@ -6,6 +6,7 @@
     "dev": "concurrently -n worker,client \"npm run dev:worker\" \"npm run dev:client\"",
     "dev:worker": "wrangler dev",
     "dev:client": "cross-env VITE_SERVER_URL=http://127.0.0.1:8787 npm --prefix client run dev",
+    "dev:node": "concurrently -n server,client \"npm --prefix server run dev\" \"cross-env VITE_SERVER_URL=http://127.0.0.1:4000 npm --prefix client run dev\"",
     "build": "npm --prefix client run build && npm --prefix server run build",
     "build:cloudflare": "npm --prefix client run build",
     "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy",

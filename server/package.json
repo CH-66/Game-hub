@@ -10,10 +10,12 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "socket.io": "^4.7.5"
+    "ws": "^8.17.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.5",
+    "@types/ws": "^8.5.10",
     "tsx": "^4.7.1",
     "typescript": "^5.5.4"
   }

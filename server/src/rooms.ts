@@ -1,14 +1,20 @@
 import crypto from 'crypto'
 import type { PlayerId, PieceMap } from '../../shared/types.js'
-import type { RoomState, RoomStatus, PlayerSlot } from '../../shared/protocol.js'
+import type { RoomState, RoomStatus } from '../../shared/protocol.js'
+import { EMOJI_LIST } from '../../shared/emojis.js'
 import { createBoard, createInitialPieces } from './rules/board.js'
 import { getValidMoves } from './rules/move.js'
 import { getWinner } from './rules/win.js'
 
-type InternalSlot = PlayerSlot & {
+type InternalSlot = {
+  id: string
+  connected: boolean
+  ready: boolean
   token: string
   disconnectedAt?: number
   lastMoveAt?: number
+  lastEmojiAt?: number
+  lastChatAt?: number
 }
 
 type Room = {
@@ -24,39 +30,34 @@ type Room = {
   updatedAt: number
 }
 
-type PlayerIndex = {
-  roomId: string
-  seat: PlayerId
-}
-
 const BOARD_SIZE = 4
-
-const createRoomId = (): string =>
-  Math.random()
-    .toString(36)
-    .slice(2, 8)
-    .toUpperCase()
+const DISCONNECT_TIMEOUT_MS = 10 * 60 * 1000
+const EMPTY_ROOM_GRACE_MS = 30 * 1000
+const MAX_CHAT_LENGTH = 120
+const EMOJI_COOLDOWN_MS = 1200
+const CHAT_COOLDOWN_MS = 900
 
 const createToken = (): string => crypto.randomUUID()
 
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) {
+    throw new Error(message)
+  }
+}
+
 export class RoomManager {
   private rooms = new Map<string, Room>()
-  private playerIndex = new Map<string, PlayerIndex>()
   private board = createBoard(BOARD_SIZE)
-  private disconnectTimeoutMs = 10 * 60 * 1000
 
-  createRoom(socketId: string): { room: Room; seat: PlayerId; token: string } {
-    let roomId = createRoomId()
-    while (this.rooms.has(roomId)) {
-      roomId = createRoomId()
-    }
+  createRoom(roomId: string): { roomId: string; seat: PlayerId; token: string } {
+    assert(!this.rooms.has(roomId), 'Room already exists.')
 
     const token = createToken()
     const room: Room = {
       id: roomId,
       status: 'waiting',
       players: {
-        A: { id: socketId, connected: true, ready: false, token },
+        A: { id: 'A', connected: false, ready: false, token },
         B: null,
       },
       pieces: createInitialPieces(this.board),
@@ -69,83 +70,40 @@ export class RoomManager {
     }
 
     this.rooms.set(roomId, room)
-    this.playerIndex.set(socketId, { roomId, seat: 'A' })
-    return { room, seat: 'A', token }
+    return { roomId, seat: 'A', token }
   }
 
-  joinRoom(socketId: string, roomId: string): { room: Room; seat: PlayerId; token: string } {
-    const room = this.rooms.get(roomId)
-    if (!room) {
-      throw new Error('房间不存在')
-    }
-    if (room.players.B) {
-      throw new Error('房间已满')
-    }
+  joinRoom(roomId: string): { roomId: string; seat: PlayerId; token: string } {
+    const room = this.requireRoom(roomId)
+    const seat = room.players.A ? (room.players.B ? null : 'B') : 'A'
+    assert(seat, 'Room is full.')
 
     const token = createToken()
-    room.players.B = { id: socketId, connected: true, ready: false, token }
+    room.players[seat] = {
+      id: seat,
+      connected: false,
+      ready: false,
+      token,
+    }
     room.updatedAt = Date.now()
-    this.playerIndex.set(socketId, { roomId, seat: 'B' })
-    return { room, seat: 'B', token }
+
+    return { roomId: room.id, seat, token }
   }
 
-  reconnect(roomId: string, token: string, socketId: string): { room: Room; seat: PlayerId } {
-    const room = this.rooms.get(roomId)
-    if (!room) {
-      throw new Error('房间不存在')
-    }
-    const seat =
-      room.players.A?.token === token ? 'A' : room.players.B?.token === token ? 'B' : null
-    if (!seat) {
-      throw new Error('无效的重连凭证')
-    }
+  reconnect(roomId: string, token: string): { roomId: string; seat: PlayerId; token: string } {
+    const room = this.requireRoom(roomId)
+    const seat = this.findSeatByToken(room, token)
+    assert(seat, 'Invalid session token.')
 
+    return { roomId: room.id, seat, token }
+  }
+
+  setReady(roomId: string, token: string, ready: boolean): RoomState {
+    const room = this.requireRoom(roomId)
+    const seat = this.assertSeatByToken(room, token)
     const slot = room.players[seat]
-    if (!slot) {
-      throw new Error('玩家不存在')
-    }
+    assert(slot, 'Player not found.')
 
-    this.playerIndex.delete(slot.id)
-    slot.id = socketId
-    slot.connected = true
-    slot.disconnectedAt = undefined
-    room.updatedAt = Date.now()
-    this.playerIndex.set(socketId, { roomId, seat })
-    return { room, seat }
-  }
-
-  leaveRoom(socketId: string, roomId: string) {
-    const room = this.rooms.get(roomId)
-    if (!room) {
-      return
-    }
-    const index = this.playerIndex.get(socketId)
-    if (!index) {
-      return
-    }
-
-    room.players[index.seat] = null
-    room.updatedAt = Date.now()
-    this.playerIndex.delete(socketId)
-
-    if (!room.players.A && !room.players.B) {
-      this.rooms.delete(roomId)
-    }
-  }
-
-  setReady(socketId: string, roomId: string, ready: boolean): Room {
-    const room = this.rooms.get(roomId)
-    if (!room) {
-      throw new Error('房间不存在')
-    }
-    const index = this.playerIndex.get(socketId)
-    if (!index || index.roomId !== roomId) {
-      throw new Error('玩家未在房间内')
-    }
-    const slot = room.players[index.seat]
-    if (!slot) {
-      throw new Error('玩家不存在')
-    }
     slot.ready = ready
     room.updatedAt = Date.now()
 
@@ -154,102 +112,166 @@ export class RoomManager {
       room.startedAt = Date.now()
       room.endedAt = null
       room.moveCount = 0
+      room.winner = null
     } else {
       room.status = 'waiting'
     }
 
-    return room
+    return this.toRoomState(room)
   }
 
-  applyMove(socketId: string, roomId: string, from: string, to: string): Room {
-    const room = this.rooms.get(roomId)
-    if (!room) {
-      throw new Error('房间不存在')
-    }
-    if (room.status !== 'playing') {
-      throw new Error('对局尚未开始')
-    }
-    if (room.winner) {
-      throw new Error('对局已结束')
-    }
-    const index = this.playerIndex.get(socketId)
-    if (!index || index.roomId !== roomId) {
-      throw new Error('玩家未在房间内')
-    }
-    if (index.seat !== room.currentPlayer) {
-      throw new Error('未轮到该玩家')
-    }
-    const slot = room.players[index.seat]
-    if (!slot) {
-      throw new Error('玩家不存在')
-    }
+  applyMove(roomId: string, token: string, from: string, to: string): RoomState {
+    const room = this.requireRoom(roomId)
+    assert(room.status === 'playing', 'The match has not started yet.')
+    assert(!room.winner, 'The match is already finished.')
+
+    const seat = this.assertSeatByToken(room, token)
+    assert(seat === room.currentPlayer, 'It is not your turn.')
+
+    const slot = room.players[seat]
+    assert(slot, 'Player not found.')
+
     if (slot.lastMoveAt && Date.now() - slot.lastMoveAt < 200) {
-      throw new Error('操作过于频繁')
-    }
-    const owner = room.pieces[from]
-    if (owner !== index.seat) {
-      throw new Error('棋子归属不匹配')
+      throw new Error('Too many move attempts.')
     }
 
+    const owner = room.pieces[from]
+    assert(owner === seat, 'The selected piece does not belong to you.')
+
     const moves = getValidMoves(from, room.pieces, this.board.positionSet)
-    const valid = moves.steps.has(to) || moves.jumps.has(to)
-    if (!valid) {
-      throw new Error('非法走子')
-    }
+    const isValid = moves.steps.has(to) || moves.jumps.has(to)
+    assert(isValid, 'Illegal move.')
 
     const nextPieces: PieceMap = { ...room.pieces }
     delete nextPieces[from]
-    nextPieces[to] = index.seat
+    nextPieces[to] = seat
 
     room.pieces = nextPieces
     room.updatedAt = Date.now()
-    slot.lastMoveAt = room.updatedAt
     room.moveCount += 1
+    slot.lastMoveAt = room.updatedAt
     room.winner = getWinner(nextPieces, this.board.homeA, this.board.homeB)
+
     if (room.winner) {
       room.status = 'finished'
       room.endedAt = Date.now()
     } else {
-      room.currentPlayer = index.seat === 'A' ? 'B' : 'A'
+      room.currentPlayer = seat === 'A' ? 'B' : 'A'
     }
 
-    return room
+    return this.toRoomState(room)
   }
 
-  markDisconnected(socketId: string) {
-    const index = this.playerIndex.get(socketId)
-    if (!index) {
-      return
+  sendEmoji(roomId: string, token: string, emoji: string): { seat: PlayerId } {
+    const room = this.requireRoom(roomId)
+    const seat = this.assertSeatByToken(room, token)
+    const slot = room.players[seat]
+    assert(slot, 'Player not found.')
+    assert((EMOJI_LIST as readonly string[]).includes(emoji), 'Unsupported emoji.')
+
+    const now = Date.now()
+    if (slot.lastEmojiAt && now - slot.lastEmojiAt < EMOJI_COOLDOWN_MS) {
+      throw new Error('Emoji cooldown is active.')
     }
-    const room = this.rooms.get(index.roomId)
-    if (!room) {
-      return
-    }
-    const slot = room.players[index.seat]
-    if (slot) {
-      slot.connected = false
-      slot.disconnectedAt = Date.now()
-      room.updatedAt = Date.now()
-    }
+    slot.lastEmojiAt = now
+
+    return { seat }
   }
 
-  markConnected(socketId: string) {
-    const index = this.playerIndex.get(socketId)
-    if (!index) {
-      return
+  sendChat(roomId: string, token: string, message: string): { seat: PlayerId; text: string } {
+    const room = this.requireRoom(roomId)
+    const seat = this.assertSeatByToken(room, token)
+    const slot = room.players[seat]
+    assert(slot, 'Player not found.')
+
+    const text = message.trim()
+    assert(text.length > 0, 'Message cannot be empty.')
+    assert(text.length <= MAX_CHAT_LENGTH, 'Message is too long.')
+
+    const now = Date.now()
+    if (slot.lastChatAt && now - slot.lastChatAt < CHAT_COOLDOWN_MS) {
+      throw new Error('Chat cooldown is active.')
     }
-    const room = this.rooms.get(index.roomId)
-    if (!room) {
-      return
-    }
-    const slot = room.players[index.seat]
-    if (slot) {
-      slot.connected = true
-      slot.disconnectedAt = undefined
-      room.updatedAt = Date.now()
-    }
+    slot.lastChatAt = now
+
+    return { seat, text }
   }
 
+  restart(roomId: string, token: string): RoomState {
+    const room = this.requireRoom(roomId)
+    this.assertSeatByToken(room, token)
+
+    room.status = 'waiting'
+    room.pieces = createInitialPieces(this.board)
+    room.currentPlayer = 'A'
+    room.winner = null
+    room.startedAt = null
+    room.endedAt = null
+    room.moveCount = 0
+    room.updatedAt = Date.now()
+
+    ;(['A', 'B'] as const).forEach((s) => {
+      const slot = room.players[s]
+      if (slot) {
+        slot.ready = false
+      }
+    })
+
+    return this.toRoomState(room)
+  }
+
+  leave(roomId: string, token: string): { destroyed: boolean; state: RoomState | null; seat: PlayerId } {
+    const room = this.requireRoom(roomId)
+    const seat = this.assertSeatByToken(room, token)
+
+    room.players[seat] = null
+    room.updatedAt = Date.now()
+
+    if (!room.players.A && !room.players.B) {
+      this.rooms.delete(roomId)
+      return { destroyed: true, state: null, seat }
+    }
+
+    if (room.status === 'playing') {
+      room.status = 'finished'
+      room.winner = seat === 'A' ? 'B' : 'A'
+      room.endedAt = Date.now()
+    }
+
+    return { destroyed: false, state: this.toRoomState(room), seat }
+  }
+
+  /** 验证 token 并返回对应座位（公开接口，按 roomId） */
+  requireSeatByToken(roomId: string, token: string): PlayerId {
+    const room = this.requireRoom(roomId)
+    return this.assertSeatByToken(room, token)
+  }
+
+  /** 标记玩家已连接 */
+  setConnected(roomId: string, seat: PlayerId, token: string): void {
+    const room = this.rooms.get(roomId)
+    if (!room) return
+    const slot = room.players[seat]
+    if (!slot || slot.token !== token) return
+
+    slot.connected = true
+    slot.disconnectedAt = undefined
+    room.updatedAt = Date.now()
+  }
+
+  /** 标记玩家已断线 */
+  setDisconnected(roomId: string, seat: PlayerId, token: string): void {
+    const room = this.rooms.get(roomId)
+    if (!room) return
+    const slot = room.players[seat]
+    if (!slot || slot.token !== token) return
+
+    slot.connected = false
+    slot.disconnectedAt = Date.now()
+    room.updatedAt = Date.now()
+  }
+
+  /** 检查断线超时，返回需要广播的房间状态列表 */
   checkTimeouts(): RoomState[] {
     const now = Date.now()
     const updated: RoomState[] = []
@@ -258,20 +280,17 @@ export class RoomManager {
       if (room.status !== 'playing' || room.winner) {
         return
       }
-      const seats: PlayerId[] = ['A', 'B']
-      seats.forEach((seat) => {
+
+      ;(['A', 'B'] as const).forEach((seat) => {
         const slot = room.players[seat]
-        if (!slot || slot.connected) {
+        if (!slot || slot.connected || !slot.disconnectedAt) {
           return
         }
-        if (!slot.disconnectedAt) {
-          return
-        }
-        if (now - slot.disconnectedAt > this.disconnectTimeoutMs) {
+        if (now - slot.disconnectedAt > DISCONNECT_TIMEOUT_MS) {
           room.winner = seat === 'A' ? 'B' : 'A'
           room.status = 'finished'
-          room.updatedAt = now
           room.endedAt = now
+          room.updatedAt = now
           updated.push(this.toRoomState(room))
         }
       })
@@ -280,32 +299,65 @@ export class RoomManager {
     return updated
   }
 
+  /** 清理所有玩家断线超过 30 秒的空房间，返回被清理的 roomId 列表 */
+  reapIdleRooms(): string[] {
+    const now = Date.now()
+    const reaped: string[] = []
+
+    this.rooms.forEach((room, roomId) => {
+      const hasConnected = (['A', 'B'] as const).some((s) => room.players[s]?.connected)
+      if (hasConnected) return
+
+      const disconnectedTimes = (['A', 'B'] as const)
+        .map((s) => room.players[s]?.disconnectedAt)
+        .filter((t): t is number => typeof t === 'number')
+
+      if (disconnectedTimes.length === 0) {
+        // 无玩家槽位或无断线时间记录（可能两个槽位都是 null）
+        // 对于两个槽位都为 null 的空房间也清理
+        const hasAnyPlayer = room.players.A || room.players.B
+        if (!hasAnyPlayer) {
+          reaped.push(roomId)
+        }
+        return
+      }
+
+      const lastDisconnectedAt = Math.max(...disconnectedTimes)
+      if (now - lastDisconnectedAt >= EMPTY_ROOM_GRACE_MS) {
+        reaped.push(roomId)
+      }
+    })
+
+    reaped.forEach((roomId) => this.rooms.delete(roomId))
+    return reaped
+  }
+
   getRoomState(roomId: string): RoomState | null {
     const room = this.rooms.get(roomId)
-    if (!room) {
-      return null
-    }
+    if (!room) return null
     return this.toRoomState(room)
   }
 
-  getRoomStateBySocket(socketId: string): RoomState | null {
-    const index = this.playerIndex.get(socketId)
-    if (!index) {
-      return null
-    }
-    const room = this.rooms.get(index.roomId)
-    if (!room) {
-      return null
-    }
-    return this.toRoomState(room)
+  hasRoom(roomId: string): boolean {
+    return this.rooms.has(roomId)
   }
 
-  getSeat(socketId: string, roomId: string): PlayerId | null {
-    const index = this.playerIndex.get(socketId)
-    if (!index || index.roomId !== roomId) {
-      return null
-    }
-    return index.seat
+  private requireRoom(roomId: string): Room {
+    const room = this.rooms.get(roomId)
+    assert(room, 'Room not found.')
+    return room
+  }
+
+  private assertSeatByToken(room: Room, token: string): PlayerId {
+    const seat = this.findSeatByToken(room, token)
+    assert(seat, 'Invalid session token.')
+    return seat
+  }
+
+  private findSeatByToken(room: Room, token: string): PlayerId | null {
+    if (room.players.A?.token === token) return 'A'
+    if (room.players.B?.token === token) return 'B'
+    return null
   }
 
   private toRoomState(room: Room): RoomState {
@@ -336,27 +388,5 @@ export class RoomManager {
       moveCount: room.moveCount,
       updatedAt: room.updatedAt,
     }
-  }
-
-  restart(roomId: string) {
-    const room = this.rooms.get(roomId)
-    if (!room) {
-      throw new Error('房间不存在')
-    }
-    room.status = 'waiting'
-    room.pieces = createInitialPieces(this.board)
-    room.currentPlayer = 'A'
-    room.winner = null
-    room.startedAt = null
-    room.endedAt = null
-    room.moveCount = 0
-    if (room.players.A) {
-      room.players.A.ready = false
-    }
-    if (room.players.B) {
-      room.players.B.ready = false
-    }
-    room.updatedAt = Date.now()
-    return room
   }
 }
